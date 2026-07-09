@@ -51,15 +51,16 @@ export function showSkillEffect(skillId, x, y) {
 export function showDamageHit(x, y, damage, isCrit = false) {
   const el = document.createElement('div');
   const color = isCrit ? '#ff4444' : '#e8ff47';
-  const size = isCrit ? '22px' : '16px';
-  el.style.cssText = `position:fixed;left:${x}px;top:${y}px;pointer-events:none;z-index:260;font-family:monospace;font-size:${size};font-weight:bold;color:${color};text-shadow:2px 2px 4px #000, 0 0 10px ${color};transform:translateY(0);opacity:1;transition:transform 0.6s ease-out,opacity 0.6s;`;
+  const size = isCrit ? '28px' : '20px';
+  const glow = isCrit ? '0 0 15px rgba(255,68,68,0.8)' : '0 0 8px rgba(232,255,71,0.5)';
+  el.style.cssText = `position:fixed;left:${x}px;top:${y}px;pointer-events:none;z-index:260;font-family:monospace;font-size:${size};font-weight:bold;color:${color};text-shadow:2px 2px 4px #000, ${glow};transform:translateY(0) scale(1.5);opacity:1;transition:transform 0.8s ease-out,opacity 0.8s;`;
   el.textContent = isCrit ? `CRIT ${damage}!` : `-${damage}`;
   document.body.appendChild(el);
   requestAnimationFrame(() => {
-    el.style.transform = 'translateY(-50px)';
+    el.style.transform = 'translateY(-60px) scale(1)';
     el.style.opacity = '0';
   });
-  setTimeout(() => el.remove(), 600);
+  setTimeout(() => el.remove(), 800);
 }
 
 export function showHealEffect(x, y, amount) {

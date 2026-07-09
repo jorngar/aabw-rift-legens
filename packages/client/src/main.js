@@ -27,6 +27,7 @@ import { Minimap } from './ui/minimap.js';
 import { createDamageNumber, screenShake, flashRed, goldenFlash, showVictory, showDefeat } from './ui/screenEffects.js';
 import { showSkillEffect, showDamageHit, showGoldDrop } from './ui/skillVFX.js';
 import { LightingSystem } from './ui/lighting.js';
+import { updateEnemyHealthBars } from './ui/enemyHealthBars.js';
 import { DemoRunner } from './demo/scenarioRunner.js';
 
 // ---- Bootstrap ----
@@ -186,10 +187,13 @@ async function initGame() {
   }
 
   if (!riftSystem.inDungeon) {
-    spawnEnemy('shadowBeast', 5, 5);
-    spawnEnemy('shadowBeast', 10, 6);
-    spawnEnemy('shadowBeast', 6, 11);
-    spawnEnemy('riftKnight', 12, 12);
+    // Spawn enemies CLOSE to player so they're visible immediately
+    spawnEnemy('shadowBeast', 7, 6);
+    spawnEnemy('shadowBeast', 9, 7);
+    spawnEnemy('shadowBeast', 6, 9);
+    spawnEnemy('shadowBeast', 10, 8);
+    spawnEnemy('shadowBeast', 8, 11);
+    spawnEnemy('riftKnight', 11, 10);
   }
 
   // ---- Portal (animated CSS effect) ----
@@ -407,6 +411,9 @@ async function initGame() {
 
     // Telemetry tick
     telemetry.tick();
+
+    // Update enemy health bars
+    updateEnemyHealthBars(world, camera);
 
     // HUD
     updateHUD();
