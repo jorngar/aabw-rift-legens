@@ -178,8 +178,8 @@ async function initGame() {
       stats: { hp: def.hp, maxHp: def.hp, damage: def.damage, speed: def.speed },
       sprite,
       hasShadow: true,
-      walkAnim: Object.values(this.assets.sheets[sheetKey].textures).sort(),
-      idleAnim: Object.values(this.assets.sheets[sheetKey].textures).sort().slice(0, 4),
+      walkAnim: Object.values(assets.sheets[sheetKey].textures).sort(),
+      idleAnim: Object.values(assets.sheets[sheetKey].textures).sort().slice(0, 4),
     });
 
     world.addEntity(entity);
