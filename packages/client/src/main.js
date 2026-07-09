@@ -11,12 +11,25 @@ import { movementSystem, spriteSyncSystem, enemyAISystem, depthSortSystem, playe
 import { TelemetrySystem } from './systems/telemetry.js';
 import { ABTestingSystem } from './systems/ab-testing.js';
 import { DataLoggingSystem } from './systems/data-logging.js';
+import { ProgressionSystem } from './systems/progression.js';
+import { RiftSystem } from './systems/riftSystem.js';
+import { InventorySystem } from './systems/inventorySystem.js';
 import { setupInput } from './input.js';
 import { EventType, createEvent } from '@shared/events.js';
-import { PLAYER_DEFAULTS, ENEMIES, SKILLS, CLIENT } from '@shared/config.js';
+import { PLAYER_DEFAULTS, ENEMIES, SKILLS, CLIENT, GOLD_DROPS } from '@shared/config.js';
+
+// UI
+import { showTitleScreen } from './ui/titleScreen.js';
+import { AgentPanel } from './ui/agentPanel.js';
+import { ShopUI } from './ui/shopUI.js';
+import { PurchaseSimulator } from './ui/purchaseUI.js';
+import { Minimap } from './ui/minimap.js';
+import { createDamageNumber, screenShake, flashRed, goldenFlash, showVictory, showDefeat } from './ui/screenEffects.js';
 
 // ---- Bootstrap ----
-async function main() {
+showTitleScreen(() => initGame());
+
+async function initGame() {
   const container = document.getElementById('game-container');
 
   const app = new PIXI.Application({
@@ -39,22 +52,17 @@ async function main() {
   const abTesting = new ABTestingSystem(playerId);
   const dataLog = new DataLoggingSystem();
 
-  // Try to connect to server (non-blocking)
   telemetry.connect('ws://localhost:3001/ws/telemetry');
   dataLog.connect('ws://localhost:3001/ws/data');
 
-  // Event emitter — routes to all three agent systems
+  let progressionSystem = null;
   function emitEvent(event) {
     telemetry.record(event);
     dataLog.record(event);
-    if (event.type !== EventType.MOVE_START && event.type !== EventType.MOVE_STOP) {
-      console.log(`[Event] ${event.type}`, event);
-    }
+    if (progressionSystem) progressionSystem.trackEvent(event);
   }
 
-  // Assign A/B test cohorts
   abTesting.assignAll(emitEvent);
-  console.log('[AB] Assignments:', Object.fromEntries(abTesting.assignments));
 
   // ---- Create World ----
   const world = new World();
@@ -66,10 +74,8 @@ async function main() {
   renderTileMap(assets, grid, camera.container);
   app.stage.addChild(camera.container);
 
-  // ---- Create Player Entity ----
+  // ---- Create Player ----
   const cadetSheet = assets.sheets.seedCadetWalk;
-  const cadetAttackSheet = assets.sheets.seedCadetAttack;
-
   const playerSprite = assets.anim('seedCadetWalk', 'frame_', 10, true);
   playerSprite.anchor.set(0.5, 0.8);
   playerSprite.scale.set(0.5);
@@ -84,7 +90,7 @@ async function main() {
     isMoving: false,
     attackTarget: null,
     lastAttack: 0,
-    attackCooldownMs: abTesting.getOverride('skills.shadowStrike.cooldownMs', PLAYER_DEFAULTS.attackCooldownMs),
+    attackCooldownMs: PLAYER_DEFAULTS.attackCooldownMs,
     attackRange: PLAYER_DEFAULTS.attackRange,
     stats: {
       hp: PLAYER_DEFAULTS.hp,
@@ -102,6 +108,34 @@ async function main() {
   world.addEntity(playerEntity);
   camera.container.addChild(playerSprite);
 
+  // ---- Init Game Systems ----
+  progressionSystem = new ProgressionSystem(playerEntity, emitEvent);
+  const inventorySystem = new InventorySystem(playerEntity, emitEvent);
+  const riftSystem = new RiftSystem(playerEntity, world, assets, camera, emitEvent, progressionSystem);
+
+  // ---- Init UI ----
+  const agentPanel = new AgentPanel(telemetry, abTesting, dataLog);
+  agentPanel.init();
+
+  const shopUI = new ShopUI(inventorySystem);
+  shopUI.init();
+
+  const purchaseUI = new PurchaseSimulator(inventorySystem, emitEvent);
+  purchaseUI.init();
+
+  const minimap = new Minimap(world, playerEntity);
+  minimap.init();
+
+  // ---- Shop Merchant NPC ----
+  const merchantSprite = assets.anim('riftMageWalk', 'frame_', 6, true);
+  merchantSprite.anchor.set(0.5, 0.8);
+  merchantSprite.scale.set(0.45);
+  const merchantPos = { x: 4, y: 6 };
+  const mScreen = tileToScreen(merchantPos.x, merchantPos.y);
+  merchantSprite.x = mScreen.x;
+  merchantSprite.y = mScreen.y;
+  camera.container.addChild(merchantSprite);
+
   // ---- Spawn Enemies ----
   function spawnEnemy(type, x, y) {
     const def = ENEMIES[type];
@@ -111,26 +145,12 @@ async function main() {
     sprite.scale.set(0.45);
 
     const entity = createEntity({
-      isEnemy: true,
-      enemyType: type,
-      name: def.name,
-      pos: { x, y },
-      spawnPos: { x, y },
-      targetPos: null,
-      path: null,
-      direction: 'S',
-      isMoving: false,
-      aiState: 'idle',
-      patrolTimer: Math.random() * 3,
-      lastAttack: 0,
-      attackCooldownMs: def.attackCooldownMs,
-      attackRange: def.attackRange,
-      stats: {
-        hp: def.hp,
-        maxHp: def.hp,
-        damage: def.damage,
-        speed: def.speed,
-      },
+      isEnemy: true, enemyType: type, name: def.name,
+      pos: { x, y }, spawnPos: { x, y }, targetPos: null, path: null,
+      direction: 'S', isMoving: false, aiState: 'idle',
+      patrolTimer: Math.random() * 3, lastAttack: 0,
+      attackCooldownMs: def.attackCooldownMs, attackRange: def.attackRange,
+      stats: { hp: def.hp, maxHp: def.hp, damage: def.damage, speed: def.speed },
       sprite,
       walkAnim: Object.values(assets.sheets[sheetKey].textures).sort(),
       idleAnim: Object.values(assets.sheets[sheetKey].textures).sort().slice(0, 4),
@@ -141,19 +161,20 @@ async function main() {
     return entity;
   }
 
-  // Spawn some enemies
-  spawnEnemy('shadowBeast', 5, 5);
-  spawnEnemy('shadowBeast', 10, 6);
-  spawnEnemy('shadowBeast', 6, 11);
-  spawnEnemy('riftKnight', 12, 12);
+  if (!riftSystem.inDungeon) {
+    spawnEnemy('shadowBeast', 5, 5);
+    spawnEnemy('shadowBeast', 10, 6);
+    spawnEnemy('shadowBeast', 6, 11);
+    spawnEnemy('riftKnight', 12, 12);
+  }
 
-  // ---- Spawn Rift Portal ----
+  // ---- Portal Sprite ----
   const portalSprite = assets.anim('riftPortal', 'frame_', 8, true);
   portalSprite.anchor.set(0.5, 0.5);
   portalSprite.scale.set(0.35);
-  const portalPos = tileToScreen(8, 3);
-  portalSprite.x = portalPos.x;
-  portalSprite.y = portalPos.y;
+  const portalScreen = tileToScreen(8, 3);
+  portalSprite.x = portalScreen.x;
+  portalSprite.y = portalScreen.y;
   camera.container.addChild(portalSprite);
 
   // ---- Input ----
@@ -164,8 +185,42 @@ async function main() {
     world,
     emitEvent,
     useSkillFn: (attacker, skillId, target, targetPos, emit) => {
-      return useSkill(attacker, skillId, target, targetPos, emit);
+      const result = useSkill(attacker, skillId, target, targetPos, emit);
+      if (result.success) progressionSystem.addSkillUse();
+      return result;
     },
+  });
+
+  // ---- Additional Key Handlers ----
+  window.addEventListener('keydown', (e) => {
+    const key = e.key.toLowerCase();
+
+    // F — interact (rift portal or shop)
+    if (key === 'f') {
+      if (riftSystem.showPrompt) {
+        riftSystem.enterRift();
+      } else if (tileDistance(playerEntity.pos, merchantPos) < 2) {
+        shopUI.toggle();
+      }
+    }
+
+    // I — inventory
+    if (key === 'i') {
+      shopUI.toggle();
+    }
+
+    // 1/2/3 — use items
+    if (key === '1' && inventorySystem.hasItem('health_potion')) {
+      inventorySystem.useItem('health_potion');
+    }
+    if (key === '2' && inventorySystem.hasItem('mana_potion')) {
+      inventorySystem.useItem('mana_potion');
+    }
+
+    // P — purchase UI
+    if (key === 'p') {
+      purchaseUI.toggle();
+    }
   });
 
   // ---- Session Start ----
@@ -177,17 +232,25 @@ async function main() {
   function updateHUD() {
     const hpPct = (playerEntity.stats.hp / playerEntity.stats.maxHp) * 100;
     const mpPct = (playerEntity.stats.mp / playerEntity.stats.maxMp) * 100;
+    const xpProgress = progressionSystem.getProgress();
+    const xpPct = xpProgress.pct * 100;
+
     const hpFill = document.getElementById('hp-fill');
     const mpFill = document.getElementById('mp-fill');
+    const xpFill = document.getElementById('xp-fill');
     if (hpFill) hpFill.style.width = `${hpPct * 2}px`;
     if (mpFill) mpFill.style.width = `${mpPct * 1.5}px`;
+    if (xpFill) xpFill.style.width = `${xpPct}px`;
   }
 
   // ---- Game Loop ----
   app.ticker.add((delta) => {
-    const dt = delta / 60; // seconds
+    const dt = delta / 60;
 
-    // Player combat target auto-attack
+    // Rift system update
+    riftSystem.update(dt);
+
+    // Player auto-attack target
     if (playerEntity.attackTarget) {
       const target = playerEntity.attackTarget;
       if (target.stats.hp > 0) {
@@ -196,13 +259,21 @@ async function main() {
           playerEntity.targetPos = null;
           playerEntity.path = [];
           const result = meleeAttack(playerEntity, target, emitEvent);
-          if (result.hit && result.killed) {
-            playerEntity.attackTarget = null;
-            // Remove dead enemy sprite
-            if (target.sprite?.parent) {
-              target.sprite.parent.removeChild(target.sprite);
+          if (result.hit) {
+            const screen = tileToScreen(target.pos.x, target.pos.y);
+            createDamageNumber(screen.x + camera.container.x, screen.y + camera.container.y - 40, result.damage, result.isCrit);
+            if (result.isCrit) screenShake(3, 100);
+            if (result.killed) {
+              playerEntity.attackTarget = null;
+              // Gold drop
+              const drops = GOLD_DROPS[target.enemyType] || { min: 5, max: 15 };
+              const gold = drops.min + Math.floor(Math.random() * (drops.max - drops.min));
+              progressionSystem.addGold(gold);
+              progressionSystem.addKill(target.enemyType);
+              progressionSystem.addXP(target.enemyType === 'riftKnight' ? 100 : 25, 'kill');
+              if (target.sprite?.parent) target.sprite.parent.removeChild(target.sprite);
+              world.removeEntity(target.id);
             }
-            world.removeEntity(target.id);
           }
         } else {
           playerEntity.targetPos = { x: Math.round(target.pos.x), y: Math.round(target.pos.y) };
@@ -212,13 +283,12 @@ async function main() {
       }
     }
 
-    // WASD continuous movement (overrides click-to-move)
+    // WASD movement
     const { dx, dy } = getMovementInput();
     if (dx !== 0 || dy !== 0) {
       const speed = playerEntity.stats.speed * dt;
       playerEntity.pos.x += dx * speed;
       playerEntity.pos.y += dy * speed;
-      // Clamp to map bounds
       playerEntity.pos.x = Math.max(1, Math.min(14, playerEntity.pos.x));
       playerEntity.pos.y = Math.max(1, Math.min(14, playerEntity.pos.y));
       playerEntity.isMoving = true;
@@ -244,22 +314,25 @@ async function main() {
     // HUD
     updateHUD();
 
-    // Portal proximity
-    const portalDist = tileDistance(playerEntity.pos, { x: 8, y: 3 });
-    if (portalDist < 1.5) {
-      portalSprite.tint = 0xe8ff47;
-    } else {
-      portalSprite.tint = 0xffffff;
+    // Portal proximity glow
+    if (!riftSystem.inDungeon) {
+      const portalDist = tileDistance(playerEntity.pos, { x: 8, y: 3 });
+      portalSprite.tint = portalDist < 2 ? 0xe8ff47 : 0xffffff;
+    }
+
+    // Player death check
+    if (playerEntity.stats.hp <= 0) {
+      flashRed();
+      showDefeat({ waves: riftSystem.currentWave, kills: progressionSystem.kills });
+      playerEntity.stats.hp = playerEntity.stats.maxHp; // prevent re-trigger
     }
   });
 
-  // Periodic data flush
+  // Periodic flush
   setInterval(() => {
     dataLog.flush();
     telemetry.flush();
   }, 5000);
 
-  console.log('[RiftSEED] Game initialized. WASD to move, click to move/attack, Q/W/E/R for skills, Tab for agent panel.');
+  console.log('[RiftSEED] Game initialized. WASD=move, click=move/attack, QWER=skills, F=interact, I=inventory, Tab=agents, P=shop');
 }
-
-main().catch(console.error);

@@ -91,6 +91,69 @@ export const SKILLS = Object.freeze({
   },
 });
 
+/** Rift wave configuration per tier */
+export const RIFT_WAVES = Object.freeze({
+  1: [
+    { count: 3, type: 'shadowBeast', delay: 2 },
+    { count: 5, type: 'shadowBeast', delay: 3 },
+    { count: 7, type: 'shadowBeast', delay: 3 },
+    { count: 1, type: 'riftKnight', delay: 5, isBoss: true },
+  ],
+});
+
+/** SEED Rank progression */
+export const RANKS = Object.freeze({
+  D: { name: 'D', title: 'Cadet', level: 1, xp: 0, color: '#888' },
+  C: { name: 'C', title: 'Mercenary', level: 2, xp: 100, color: '#4a9eff' },
+  B: { name: 'B', title: 'Knight', level: 3, xp: 250, color: '#a855f7' },
+  A: { name: 'A', title: 'Elite', level: 4, xp: 500, color: '#f59e0b' },
+  S: { name: 'S', title: 'Shadow Lord', level: 5, xp: 1000, color: '#e8ff47' },
+});
+
+/** Level stat bonuses */
+export const LEVEL_BONUS = Object.freeze({ maxHp: 10, maxMp: 5, damage: 3 });
+
+/** Missions */
+export const MISSIONS = Object.freeze([
+  { id: 'rift_clear', desc: 'Clear Rift Tier 1', check: 'riftCleared', reward: 50 },
+  { id: 'kill_10', desc: 'Defeat 10 Enemies', check: 'kills>=10', reward: 30 },
+  { id: 'rank_c', desc: 'Reach Rank C', check: 'rank>=C', reward: 40 },
+  { id: 'use_skills_5', desc: 'Use 5 Skills', check: 'skillsUsed>=5', reward: 25 },
+]);
+
+/** Items */
+export const ITEMS = Object.freeze({
+  health_potion: { name: 'Health Potion', type: 'consumable', heal: 50, price: 25, desc: 'Restores 50 HP' },
+  mana_potion: { name: 'Mana Potion', type: 'consumable', mana: 30, price: 25, desc: 'Restores 30 MP' },
+  rift_shard: { name: 'Rift Shard', type: 'consumable', price: 50, desc: 'Teleport to rift' },
+  scroll: { name: 'Scroll', type: 'misc', price: 15, desc: 'Ancient text' },
+  key: { name: 'Rift Key', type: 'key', price: 100, desc: 'Opens rift gates' },
+  ether_crystal: { name: 'Ether Crystal', type: 'material', price: 75, desc: 'Rift energy' },
+  rune_stone: { name: 'Rune Stone', type: 'material', price: 60, desc: 'Enchanted stone' },
+});
+
+/** Weapons */
+export const WEAPONS = Object.freeze({
+  gunblade: { name: 'Gunblade', damage: 15, speed: 0, price: 200 },
+  rift_staff: { name: 'Rift Staff', damage: 10, maxMp: 20, skillDmg: 10, price: 300 },
+  pistol: { name: 'Pistol', damage: 10, speed: 0.2, price: 150 },
+  seed_rifle: { name: 'SEED Rifle', damage: 25, speed: -0.3, price: 350 },
+  rune_daggers: { name: 'Rune Daggers', damage: 8, speed: 0.5, price: 250 },
+});
+
+/** Gold drops */
+export const GOLD_DROPS = Object.freeze({
+  shadowBeast: { min: 10, max: 20 },
+  riftKnight: { min: 50, max: 100 },
+});
+
+/** Premium packages */
+export const PREMIUM_PACKAGES = Object.freeze([
+  { id: 'starter', name: 'Starter Pack', crystals: 100, price: '$0.99', popular: false },
+  { id: 'hunter', name: 'Hunter Pack', crystals: 500, price: '$4.99', popular: true },
+  { id: 'shadow_lord', name: 'Shadow Lord Pack', crystals: 1200, price: '$9.99', popular: false },
+]);
+
 /** Map dimensions (tiles) */
 export const MAP = Object.freeze({
   GARDEN_WIDTH: 16,
