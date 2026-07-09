@@ -98,12 +98,18 @@ async function initGame(classId = 'warrior') {
   camera.container.x = app.screen.width / 2 - startScreen.x;
   camera.container.y = app.screen.height / 2 - startScreen.y;
 
-  // ---- Create Player (class-specific) ----
-  // Map classes to sprites: warrior/mage use chibiRun, rogue/ranger use chibiWalk
-  const spriteKey = (classId === 'rogue' || classId === 'ranger') ? 'chibiWalk' : 'chibiRun';
-  const playerSprite = assets.anim(spriteKey, 'frame_', 10, true);
+  // ---- Create Player (class-specific sprite) ----
+  // Map classes to visually different Flare RPG sprites
+  const classSpriteMap = {
+    warrior: 'heroHeavy',   // heavy armor warrior
+    mage: 'magician',       // mage with robes
+    rogue: 'hero',          // light armor warrior
+    ranger: 'hero',         // light armor (tinted differently)
+  };
+  const spriteKey = classSpriteMap[classId] || 'hero';
+  const playerSprite = assets.anim(spriteKey, 'frame_', 8, true);
   playerSprite.anchor.set(0.5, 0.85);
-  playerSprite.scale.set(0.2);
+  playerSprite.scale.set(0.4); // Flare sprites are 256x256
   playerSprite.tint = 0xffffff;
 
   // Class-specific color overlay (HTML div behind sprite)
@@ -156,7 +162,7 @@ async function initGame(classId = 'warrior') {
     skillCooldowns: {},
     sprite: playerSprite,
     walkAnim: Object.values(assets.sheets[spriteKey].textures).sort(),
-    idleAnim: Object.values(assets.sheets.chibiIdle.textures).sort().slice(0, 5),
+    idleAnim: Object.values(assets.sheets[spriteKey].textures).sort().slice(0, 8),
   });
   world.addEntity(playerEntity);
   camera.container.addChild(playerSprite);
