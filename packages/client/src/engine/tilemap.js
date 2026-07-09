@@ -38,15 +38,17 @@ export function renderTileMap(assets, grid, parent) {
 
       let texture;
       if (tileType === TILE_TYPES.WALL) {
-        // Use stone tile for walls instead of wall sheet (which is too dark)
-        const idx = ((x * 31 + y * 17) + 8) % terrainFrames.length;
+        // Use light stone tile for walls
+        const idx = ((x * 31 + y * 17) + 8) % Math.min(terrainFrames.length, 30);
         texture = terrainSheet.textures[terrainFrames[idx]];
       } else {
-        // Use more frame variety to reduce repetition
-        const framesPerType = Math.max(1, Math.floor(terrainFrames.length / 6));
-        const baseIdx = Math.min(tileType * framesPerType, terrainFrames.length - 1);
+        // Only use first 40 frames (which are lighter tiles)
+        // Skip dark tiles by using a limited range
+        const maxFrame = Math.min(terrainFrames.length, 40);
+        const framesPerType = Math.max(1, Math.floor(maxFrame / 6));
+        const baseIdx = Math.min(tileType * framesPerType, maxFrame - 1);
         const variant = ((x * 31 + y * 17) % framesPerType);
-        const frameIdx = Math.min(baseIdx + variant, terrainFrames.length - 1);
+        const frameIdx = Math.min(baseIdx + variant, maxFrame - 1);
         texture = terrainSheet.textures[terrainFrames[frameIdx]];
       }
 
@@ -60,13 +62,13 @@ export function renderTileMap(assets, grid, parent) {
       const texH = texture.height;
       sprite.scale.set(128 / texW, 64 / texH);
 
-      // Light tint for variety (tiles are already brightened)
-      // Darker tint for wall tiles
+      // Bright tint for all tiles
       if (tileType === TILE_TYPES.WALL) {
-        sprite.tint = 0x888899; // darker for walls
+        sprite.tint = 0xaaaaaa; // lighter walls
+      } else if (tileType === TILE_TYPES.RIFT_CRACK) {
+        sprite.tint = 0xbb99dd; // purple tint for rift
       } else {
-        const tintVariants = [0xffffff, 0xf0f0f0, 0xe8e8e8, 0xf5f5f0];
-        sprite.tint = tintVariants[(x + y) % tintVariants.length];
+        sprite.tint = 0xdddddd; // bright for all floor tiles
       }
 
       const pos = tileToScreen(x, y);
