@@ -321,7 +321,7 @@ async function initGame() {
     // WASD movement
     const { dx, dy } = getMovementInput();
     if (dx !== 0 || dy !== 0) {
-      const speed = playerEntity.stats.speed * dt;
+      const speed = (playerEntity.stats.speed || 3) * 0.05;
       playerEntity.pos.x += dx * speed;
       playerEntity.pos.y += dy * speed;
       playerEntity.pos.x = Math.max(1, Math.min(14, playerEntity.pos.x));

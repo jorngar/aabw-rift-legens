@@ -64,7 +64,7 @@ export class Camera {
     this.container.sortableChildren = true;
     this.targetX = 0;
     this.targetY = 0;
-    this.followSpeed = 0.1;
+    this.followSpeed = 0.15;
     this.screenW = app.screen.width;
     this.screenH = app.screen.height;
   }
