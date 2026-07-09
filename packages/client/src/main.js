@@ -106,9 +106,11 @@ async function initGame(classId = 'warrior') {
   playerSprite.scale.set(0.2);
   playerSprite.tint = 0xffffff;
 
-  // Class-specific tint for visual distinction
-  const classTints = { warrior: 0xffffff, mage: 0xaaddff, rogue: 0xaaffaa, ranger: 0xffddaa };
-  playerSprite.tint = classTints[classId] || 0xffffff;
+  // Class-specific color overlay (HTML div behind sprite)
+  const classColors = { warrior: '#ffffff', mage: '#aaddff', rogue: '#aaffaa', ranger: '#ffddaa' };
+  const classColorEl = document.createElement('div');
+  classColorEl.style.cssText = `position:fixed;width:40px;height:50px;background:${classColors[classId] || '#ffffff'};opacity:0.15;border-radius:50%;pointer-events:none;z-index:44;mix-blend-mode:screen;`;
+  document.body.appendChild(classColorEl);
 
   // Update skill bar HTML with class-specific skills
   const classSkills = classConfig.skills;
@@ -451,6 +453,8 @@ async function initGame(classId = 'warrior') {
     playerGlow.style.top = `${playerScreen.y + camera.container.y - 10}px`;
     playerShadow.style.left = `${playerScreen.x + camera.container.x - 20}px`;
     playerShadow.style.top = `${playerScreen.y + camera.container.y + 15}px`;
+    classColorEl.style.left = `${playerScreen.x + camera.container.x - 20}px`;
+    classColorEl.style.top = `${playerScreen.y + camera.container.y - 25}px`;
 
     // Update lighting
     lighting.update(playerScreen.x, playerScreen.y);
