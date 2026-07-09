@@ -89,7 +89,7 @@ async function initGame() {
   const chibiSheet = assets.sheets.chibiRun;
   const playerSprite = assets.anim('chibiRun', 'frame_', 10, true);
   playerSprite.anchor.set(0.5, 0.85);
-  playerSprite.scale.set(0.12); // chibi frames are ~400px, scale to ~48px
+  playerSprite.scale.set(0.2); // larger chibi
   playerSprite.tint = 0xffffff;
 
   // Add subtle glow behind player for visibility
@@ -153,7 +153,7 @@ async function initGame() {
   // ---- Shop Merchant NPC ----
   const merchantSprite = assets.anim('magician', 'frame_', 6, true);
   merchantSprite.anchor.set(0.5, 0.8);
-  merchantSprite.scale.set(0.5);
+  merchantSprite.scale.set(0.65);
   const merchantPos = { x: 4, y: 6 };
   const mScreen = tileToScreen(merchantPos.x, merchantPos.y);
   merchantSprite.x = mScreen.x;
@@ -166,7 +166,7 @@ async function initGame() {
     const sheetKey = type === 'shadowBeast' ? 'skeleton' : 'ogre';
     const sprite = assets.anim(sheetKey, 'frame_', 8, true);
     sprite.anchor.set(0.5, 0.8);
-    sprite.scale.set(0.5);
+    sprite.scale.set(0.7); // larger enemies
     sprite.tint = 0xffffff; // full brightness for visibility
 
     const entity = createEntity({
