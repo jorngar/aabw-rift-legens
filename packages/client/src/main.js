@@ -188,13 +188,13 @@ async function initGame() {
   }
 
   if (!riftSystem.inDungeon) {
-    // Spawn enemies RIGHT NEXT to player — must be visible immediately
-    spawnEnemy('shadowBeast', 8, 7);   // directly above
-    spawnEnemy('shadowBeast', 9, 8);   // directly right
-    spawnEnemy('shadowBeast', 7, 9);   // below-left
-    spawnEnemy('shadowBeast', 9, 9);   // below-right
-    spawnEnemy('shadowBeast', 7, 7);   // above-left
-    spawnEnemy('riftKnight', 10, 9);   // boss nearby
+    // Spawn enemies spread around the map — visible from camera center
+    spawnEnemy('shadowBeast', 5, 5);    // upper-left
+    spawnEnemy('shadowBeast', 12, 5);   // upper-right
+    spawnEnemy('shadowBeast', 5, 12);   // lower-left
+    spawnEnemy('shadowBeast', 12, 12);  // lower-right
+    spawnEnemy('shadowBeast', 8, 4);    // above portal
+    spawnEnemy('riftKnight', 14, 8);    // far right boss
   }
 
   // ---- Portal (animated CSS effect) ----
