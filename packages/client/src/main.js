@@ -84,10 +84,15 @@ async function initGame() {
   playerSprite.scale.set(0.55);
   playerSprite.tint = 0xffffff;
 
-  // Add glow behind player for visibility
+  // Add subtle glow behind player for visibility
   const playerGlow = document.createElement('div');
-  playerGlow.style.cssText = 'position:fixed;width:40px;height:60px;background:radial-gradient(ellipse,rgba(232,255,71,0.3) 0%,transparent 70%);pointer-events:none;z-index:44;border-radius:50%;';
+  playerGlow.style.cssText = 'position:fixed;width:30px;height:20px;background:radial-gradient(ellipse,rgba(232,255,71,0.15) 0%,transparent 70%);pointer-events:none;z-index:44;border-radius:50%;';
   document.body.appendChild(playerGlow);
+
+  // Add drop shadow under player
+  const playerShadow = document.createElement('div');
+  playerShadow.style.cssText = 'position:fixed;width:40px;height:12px;background:radial-gradient(ellipse,rgba(0,0,0,0.4) 0%,transparent 70%);pointer-events:none;z-index:43;border-radius:50%;';
+  document.body.appendChild(playerShadow);
 
   const playerEntity = createEntity({
     isPlayer: true,
@@ -163,8 +168,9 @@ async function initGame() {
       attackCooldownMs: def.attackCooldownMs, attackRange: def.attackRange,
       stats: { hp: def.hp, maxHp: def.hp, damage: def.damage, speed: def.speed },
       sprite,
-      walkAnim: Object.values(assets.sheets[sheetKey].textures).sort(),
-      idleAnim: Object.values(assets.sheets[sheetKey].textures).sort().slice(0, 4),
+      hasShadow: true,
+      walkAnim: Object.values(this.assets.sheets[sheetKey].textures).sort(),
+      idleAnim: Object.values(this.assets.sheets[sheetKey].textures).sort().slice(0, 4),
     });
 
     world.addEntity(entity);
@@ -383,9 +389,11 @@ async function initGame() {
     camera.follow(playerScreen.x, playerScreen.y);
     camera.update();
 
-    // Update player glow position
-    playerGlow.style.left = `${playerScreen.x + camera.container.x - 20}px`;
-    playerGlow.style.top = `${playerScreen.y + camera.container.y - 40}px`;
+    // Update player glow and shadow position
+    playerGlow.style.left = `${playerScreen.x + camera.container.x - 15}px`;
+    playerGlow.style.top = `${playerScreen.y + camera.container.y - 10}px`;
+    playerShadow.style.left = `${playerScreen.x + camera.container.x - 20}px`;
+    playerShadow.style.top = `${playerScreen.y + camera.container.y + 15}px`;
 
     // Update lighting
     lighting.update(playerScreen.x, playerScreen.y);
