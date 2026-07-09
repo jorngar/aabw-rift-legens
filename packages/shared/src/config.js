@@ -241,13 +241,13 @@ export const MISSIONS = Object.freeze([
 
 /** Items */
 export const ITEMS = Object.freeze({
-  health_potion: { name: 'Health Potion', type: 'consumable', heal: 50, price: 25, desc: 'Restores 50 HP' },
-  mana_potion: { name: 'Mana Potion', type: 'consumable', mana: 30, price: 25, desc: 'Restores 30 MP' },
-  rift_shard: { name: 'Rift Shard', type: 'consumable', price: 50, desc: 'Teleport to rift' },
-  scroll: { name: 'Scroll', type: 'misc', price: 15, desc: 'Ancient text' },
-  key: { name: 'Rift Key', type: 'key', price: 100, desc: 'Opens rift gates' },
-  ether_crystal: { name: 'Ether Crystal', type: 'material', price: 75, desc: 'Rift energy' },
-  rune_stone: { name: 'Rune Stone', type: 'material', price: 60, desc: 'Enchanted stone' },
+  health_potion: { name: 'Health Potion', type: 'consumable', heal: 50, price: 15, desc: 'Restores 50 HP' },
+  mana_potion: { name: 'Mana Potion', type: 'consumable', mana: 30, price: 15, desc: 'Restores 30 MP' },
+  rift_shard: { name: 'Rift Shard', type: 'consumable', price: 40, desc: 'Teleport to rift' },
+  scroll: { name: 'Scroll', type: 'misc', price: 10, desc: 'Ancient text' },
+  key: { name: 'Rift Key', type: 'key', price: 50, desc: 'Opens rift gates' },
+  ether_crystal: { name: 'Ether Crystal', type: 'material', price: 30, desc: 'Rift energy' },
+  rune_stone: { name: 'Rune Stone', type: 'material', price: 25, desc: 'Enchanted stone' },
 });
 
 /** Weapons */

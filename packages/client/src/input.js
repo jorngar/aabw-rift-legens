@@ -1,32 +1,41 @@
 // ============================================================
-// Input Handler — fixed: arrow keys = move, Q/E/R/T = skills
+// Input Handler — class-aware, proper controls
 // ============================================================
 import { screenToTile } from './engine/isometric.js';
 import { SKILLS } from '@shared/config.js';
 
-export function setupInput({ canvas, camera, player, world, emitEvent, useSkillFn }) {
+/**
+ * Sets up keyboard and mouse input.
+ * @param {Object} opts
+ * @param {HTMLCanvasElement} opts.canvas
+ * @param {Object} opts.camera
+ * @param {Object} opts.player
+ * @param {Object} opts.world
+ * @param {Function} opts.emitEvent
+ * @param {Function} opts.useSkillFn
+ * @param {Array} opts.skillKeys — ['shadowStrike','riftSlash','heal','riftTeleport'] from class config
+ */
+export function setupInput({ canvas, camera, player, world, emitEvent, useSkillFn, skillKeys }) {
   const keys = new Set();
-
-  // Skills: Q, E, R, T (NOT W/A/S/D — those are movement)
-  const skillKeys = {
-    'q': 'shadowStrike',
-    'e': 'riftSlash',
-    'r': 'heal',
-    't': 'riftTeleport',
-  };
-
-  // Track skill cooldowns
   const cooldowns = {};
+
+  // Map Q/E/R/T to the class's skill IDs
+  const skillBindings = {
+    'q': skillKeys?.[0] || 'shadowStrike',
+    'e': skillKeys?.[1] || 'riftSlash',
+    'r': skillKeys?.[2] || 'heal',
+    't': skillKeys?.[3] || 'riftTeleport',
+  };
 
   window.addEventListener('keydown', (e) => {
     const key = e.key.toLowerCase();
     keys.add(key);
 
     // Skill usage — only on keydown, respect cooldowns
-    if (skillKeys[key] && player) {
-      const skillId = skillKeys[key];
+    if (skillBindings[key] && player) {
+      const skillId = skillBindings[key];
       const now = Date.now();
-      if (cooldowns[skillId] && now < cooldowns[skillId]) return; // on cooldown
+      if (cooldowns[skillId] && now < cooldowns[skillId]) return;
 
       const nearestEnemy = findNearestEnemy(player, world);
       const result = useSkillFn(player, skillId, nearestEnemy, nearestEnemy?.pos, emitEvent);
@@ -80,7 +89,7 @@ export function setupInput({ canvas, camera, player, world, emitEvent, useSkillF
     }
   });
 
-  // Movement: WASD only (no arrow keys to avoid scroll)
+  // Movement: WASD
   function getMovementInput() {
     let dx = 0, dy = 0;
     if (keys.has('w') || keys.has('arrowup'))    dy -= 1;
@@ -104,24 +113,18 @@ function findNearestEnemy(player, world) {
       nearest = enemy;
     }
   }
-  // Only return if in skill range (3 tiles)
   return minDist <= 3 ? nearest : null;
 }
 
 function updateSkillUI(key, cooldownMs) {
   const slot = document.getElementById(`skill-${key}`);
   if (!slot) return;
-
-  // Remove old overlay
   const old = slot.querySelector('.cooldown-overlay');
   if (old) old.remove();
-
   const overlay = document.createElement('div');
   overlay.className = 'cooldown-overlay';
   overlay.style.cssText = `position:absolute;bottom:0;left:0;right:0;background:rgba(0,0,0,0.7);height:100%;transition:height ${cooldownMs}ms linear;border-radius:0 0 6px 6px;pointer-events:none;`;
   slot.appendChild(overlay);
-  requestAnimationFrame(() => {
-    overlay.style.height = '0%';
-  });
+  requestAnimationFrame(() => { overlay.style.height = '0%'; });
   setTimeout(() => overlay.remove(), cooldownMs);
 }

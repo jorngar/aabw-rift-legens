@@ -98,12 +98,28 @@ async function initGame(classId = 'warrior') {
   camera.container.x = app.screen.width / 2 - startScreen.x;
   camera.container.y = app.screen.height / 2 - startScreen.y;
 
-  // ---- Create Player (anime chibi style) ----
-  const chibiSheet = assets.sheets.chibiRun;
-  const playerSprite = assets.anim('chibiRun', 'frame_', 10, true);
+  // ---- Create Player (class-specific) ----
+  // Map classes to sprites: warrior/mage use chibiRun, rogue/ranger use chibiWalk
+  const spriteKey = (classId === 'rogue' || classId === 'ranger') ? 'chibiWalk' : 'chibiRun';
+  const playerSprite = assets.anim(spriteKey, 'frame_', 10, true);
   playerSprite.anchor.set(0.5, 0.85);
-  playerSprite.scale.set(0.2); // larger chibi
+  playerSprite.scale.set(0.2);
   playerSprite.tint = 0xffffff;
+
+  // Class-specific tint for visual distinction
+  const classTints = { warrior: 0xffffff, mage: 0xaaddff, rogue: 0xaaffaa, ranger: 0xffddaa };
+  playerSprite.tint = classTints[classId] || 0xffffff;
+
+  // Update skill bar HTML with class-specific skills
+  const classSkills = classConfig.skills;
+  const skillBarEl = document.getElementById('skill-bar');
+  if (skillBarEl && classSkills) {
+    const keys = ['q', 'e', 'r', 't'];
+    skillBarEl.innerHTML = classSkills.map((sid, i) => {
+      const skill = SKILLS[sid];
+      return `<div class="skill-slot" id="skill-${keys[i]}"><span class="key">${keys[i].toUpperCase()}</span><span style="font-size:16px;">${skill?.icon || '?'}</span><span style="font-size:8px;">${skill?.name || sid}</span></div>`;
+    }).join('');
+  }
 
   // Add subtle glow behind player for visibility
   const playerGlow = document.createElement('div');
@@ -173,6 +189,18 @@ async function initGame(classId = 'warrior') {
   merchantSprite.y = mScreen.y;
   camera.container.addChild(merchantSprite);
 
+  // Merchant name label (HTML overlay)
+  const merchantLabel = document.createElement('div');
+  merchantLabel.style.cssText = 'position:fixed;pointer-events:none;z-index:60;font-family:monospace;font-size:10px;color:#e8ff47;text-align:center;text-shadow:1px 1px 2px #000;';
+  merchantLabel.textContent = 'MERCHANT';
+  document.body.appendChild(merchantLabel);
+
+  // Merchant interaction prompt
+  const merchantPrompt = document.createElement('div');
+  merchantPrompt.style.cssText = 'position:fixed;pointer-events:none;z-index:60;font-family:monospace;font-size:12px;color:#e8ff47;text-align:center;background:rgba(10,6,18,0.85);padding:4px 12px;border:1px solid rgba(232,255,71,0.4);border-radius:4px;display:none;';
+  merchantPrompt.textContent = 'Press F — Talk to Merchant';
+  document.body.appendChild(merchantPrompt);
+
   // ---- Spawn Enemies ----
   function spawnEnemy(type, x, y) {
     const def = ENEMIES[type];
@@ -201,13 +229,13 @@ async function initGame(classId = 'warrior') {
   }
 
   if (!riftSystem.inDungeon) {
-    // Spawn enemies spread around the map — visible from camera center
-    spawnEnemy('shadowBeast', 5, 5);    // upper-left
-    spawnEnemy('shadowBeast', 12, 5);   // upper-right
-    spawnEnemy('shadowBeast', 5, 12);   // lower-left
-    spawnEnemy('shadowBeast', 12, 12);  // lower-right
-    spawnEnemy('shadowBeast', 8, 4);    // above portal
-    spawnEnemy('riftKnight', 14, 8);    // far right boss
+    // Spawn enemies AWAY from player start (8,8) — safe zone radius of 5
+    spawnEnemy('shadowBeast', 3, 3);     // upper-left corner
+    spawnEnemy('shadowBeast', 14, 4);    // upper-right
+    spawnEnemy('shadowBeast', 3, 14);    // lower-left
+    spawnEnemy('shadowBeast', 14, 14);   // lower-right
+    spawnEnemy('shadowBeast', 10, 3);    // near portal
+    spawnEnemy('riftKnight', 15, 10);    // far right boss
   }
 
   // ---- Portal (animated CSS effect) ----
@@ -222,6 +250,7 @@ async function initGame(classId = 'warrior') {
     player: playerEntity,
     world,
     emitEvent,
+    skillKeys: classSkills,
     useSkillFn: (attacker, skillId, target, targetPos, emit) => {
       const result = useSkill(attacker, skillId, target, targetPos, emit);
       if (result.success) {
@@ -434,6 +463,19 @@ async function initGame(classId = 'warrior') {
 
     // HUD
     updateHUD();
+
+    // Merchant proximity — show label and prompt
+    const merchantScreen = tileToScreen(merchantPos.x, merchantPos.y);
+    merchantLabel.style.left = `${merchantScreen.x + camera.container.x - 30}px`;
+    merchantLabel.style.top = `${merchantScreen.y + camera.container.y - 60}px`;
+    const merchantDist = tileDistance(playerEntity.pos, merchantPos);
+    if (merchantDist < 2.5) {
+      merchantPrompt.style.display = 'block';
+      merchantPrompt.style.left = `${merchantScreen.x + camera.container.x - 70}px`;
+      merchantPrompt.style.top = `${merchantScreen.y + camera.container.y - 80}px`;
+    } else {
+      merchantPrompt.style.display = 'none';
+    }
 
     // Portal proximity glow (CSS portal)
     if (!riftSystem.inDungeon) {
