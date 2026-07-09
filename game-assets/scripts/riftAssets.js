@@ -16,11 +16,18 @@ const ASSET_BASE = ''; // Vite serves publicDir contents at root
 
 // Each entry: [key, sheetFilename, atlasFilename]
 const SHEETS = [
-  ['seedCadetWalk',     'sheets/seed-cadet-walk.png',     'atlases/seed-cadet-walk.json'],
-  ['seedCadetAttack',   'sheets/seed-cadet-attack.png',   'atlases/seed-cadet-attack.json'],
-  ['riftMageWalk',      'sheets/rift-mage-walk.png',      'atlases/rift-mage-walk.json'],
-  ['shadowBeast',       'sheets/shadow-beast.png',        'atlases/shadow-beast.json'],
-  ['riftKnight',        'sheets/rift-knight.png',         'atlases/rift-knight.json'],
+  // Flare RPG sprites (real pixel art, transparent backgrounds)
+  ['hero',              'sheets/male_light.png',          'atlases/male_light.json'],
+  ['heroHeavy',         'sheets/male_heavy.png',          'atlases/male_heavy.json'],
+  ['skeleton',          'sheets/skeleton.png',            'atlases/skeleton.json'],
+  ['goblin',            'sheets/goblin.png',              'atlases/goblin.json'],
+  ['zombie',            'sheets/zombie.png',              'atlases/zombie.json'],
+  ['werewolf',          'sheets/werewolf.png',            'atlases/werewolf.json'],
+  ['ogre',              'sheets/ogre.png',                'atlases/ogre.json'],
+  ['elemental',         'sheets/elemental.png',           'atlases/elemental.json'],
+  ['magician',          'sheets/magician.png',            'atlases/magician.json'],
+  ['slime',             'sheets/slime.png',               'atlases/slime.json'],
+  // Original sheets (terrain, VFX, UI)
   ['riftPortal',        'sheets/rift-portal.png',         'atlases/rift-portal.json'],
   ['terrainGarden',     'sheets/terrain-garden.png',      'atlases/terrain-garden.json'],
   ['terrainWalls',      'sheets/terrain-walls.png',       'atlases/terrain-walls.json'],

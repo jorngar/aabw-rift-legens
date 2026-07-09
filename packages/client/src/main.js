@@ -77,8 +77,8 @@ async function initGame() {
   app.stage.addChild(camera.container);
 
   // ---- Create Player ----
-  const cadetSheet = assets.sheets.seedCadetWalk;
-  const playerSprite = assets.anim('seedCadetWalk', 'frame_', 10, true);
+  const heroSheet = assets.sheets.hero;
+  const playerSprite = assets.anim('hero', 'frame_', 8, true);
   playerSprite.anchor.set(0.5, 0.8);
   playerSprite.scale.set(0.28);
 
@@ -104,8 +104,8 @@ async function initGame() {
     },
     skillCooldowns: {},
     sprite: playerSprite,
-    walkAnim: Object.values(cadetSheet.textures).sort(),
-    idleAnim: Object.values(cadetSheet.textures).sort().slice(0, 4),
+    walkAnim: Object.values(heroSheet.textures).sort(),
+    idleAnim: Object.values(heroSheet.textures).sort().slice(0, 8),
   });
   world.addEntity(playerEntity);
   camera.container.addChild(playerSprite);
@@ -129,7 +129,7 @@ async function initGame() {
   minimap.init();
 
   // ---- Shop Merchant NPC ----
-  const merchantSprite = assets.anim('riftMageWalk', 'frame_', 6, true);
+  const merchantSprite = assets.anim('magician', 'frame_', 6, true);
   merchantSprite.anchor.set(0.5, 0.8);
   merchantSprite.scale.set(0.25);
   const merchantPos = { x: 4, y: 6 };
@@ -141,7 +141,7 @@ async function initGame() {
   // ---- Spawn Enemies ----
   function spawnEnemy(type, x, y) {
     const def = ENEMIES[type];
-    const sheetKey = type === 'shadowBeast' ? 'shadowBeast' : 'riftKnight';
+    const sheetKey = type === 'shadowBeast' ? 'skeleton' : 'ogre';
     const sprite = assets.anim(sheetKey, 'frame_', 8, true);
     sprite.anchor.set(0.5, 0.8);
     sprite.scale.set(0.25);
