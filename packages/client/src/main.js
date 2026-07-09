@@ -25,6 +25,7 @@ import { ShopUI } from './ui/shopUI.js';
 import { PurchaseSimulator } from './ui/purchaseUI.js';
 import { Minimap } from './ui/minimap.js';
 import { createDamageNumber, screenShake, flashRed, goldenFlash, showVictory, showDefeat } from './ui/screenEffects.js';
+import { DemoRunner } from './demo/scenarioRunner.js';
 
 // ---- Bootstrap ----
 showTitleScreen(() => initGame());
@@ -221,7 +222,19 @@ async function initGame() {
     if (key === 'p') {
       purchaseUI.toggle();
     }
+
+    // P with Shift — demo mode
+    if (key === 'p' && e.shiftKey) {
+      if (!demoRunner.running) demoRunner.start();
+      else demoRunner.stop();
+    }
   });
+
+  // ---- Demo Runner ----
+  const demoRunner = new DemoRunner(
+    playerEntity, world, progressionSystem, inventorySystem,
+    riftSystem, shopUI, purchaseUI, agentPanel
+  );
 
   // ---- Session Start ----
   emitEvent(createEvent(EventType.SESSION_START, playerId, {
