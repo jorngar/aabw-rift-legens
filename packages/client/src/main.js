@@ -167,6 +167,7 @@ async function initGame() {
     const sprite = assets.anim(sheetKey, 'frame_', 8, true);
     sprite.anchor.set(0.5, 0.8);
     sprite.scale.set(0.5);
+    sprite.tint = 0xeeeeff; // bright tint for visibility
 
     const entity = createEntity({
       isEnemy: true, enemyType: type, name: def.name,
@@ -187,13 +188,13 @@ async function initGame() {
   }
 
   if (!riftSystem.inDungeon) {
-    // Spawn enemies CLOSE to player so they're visible immediately
-    spawnEnemy('shadowBeast', 7, 6);
-    spawnEnemy('shadowBeast', 9, 7);
-    spawnEnemy('shadowBeast', 6, 9);
-    spawnEnemy('shadowBeast', 10, 8);
-    spawnEnemy('shadowBeast', 8, 11);
-    spawnEnemy('riftKnight', 11, 10);
+    // Spawn enemies RIGHT NEXT to player — must be visible immediately
+    spawnEnemy('shadowBeast', 8, 7);   // directly above
+    spawnEnemy('shadowBeast', 9, 8);   // directly right
+    spawnEnemy('shadowBeast', 7, 9);   // below-left
+    spawnEnemy('shadowBeast', 9, 9);   // below-right
+    spawnEnemy('shadowBeast', 7, 7);   // above-left
+    spawnEnemy('riftKnight', 10, 9);   // boss nearby
   }
 
   // ---- Portal (animated CSS effect) ----
