@@ -26,6 +26,7 @@ import { PurchaseSimulator } from './ui/purchaseUI.js';
 import { Minimap } from './ui/minimap.js';
 import { createDamageNumber, screenShake, flashRed, goldenFlash, showVictory, showDefeat } from './ui/screenEffects.js';
 import { showSkillEffect, showDamageHit, showGoldDrop } from './ui/skillVFX.js';
+import { LightingSystem } from './ui/lighting.js';
 import { DemoRunner } from './demo/scenarioRunner.js';
 
 // ---- Bootstrap ----
@@ -81,7 +82,12 @@ async function initGame() {
   const playerSprite = assets.anim('hero', 'frame_', 8, true);
   playerSprite.anchor.set(0.5, 0.8);
   playerSprite.scale.set(0.55);
-  playerSprite.tint = 0xffffff; // Full brightness
+  playerSprite.tint = 0xffffff;
+
+  // Add glow behind player for visibility
+  const playerGlow = document.createElement('div');
+  playerGlow.style.cssText = 'position:fixed;width:40px;height:60px;background:radial-gradient(ellipse,rgba(232,255,71,0.3) 0%,transparent 70%);pointer-events:none;z-index:44;border-radius:50%;';
+  document.body.appendChild(playerGlow);
 
   const playerEntity = createEntity({
     isPlayer: true,
@@ -128,6 +134,8 @@ async function initGame() {
 
   const minimap = new Minimap(world, playerEntity);
   minimap.init();
+
+  const lighting = new LightingSystem();
 
   // ---- Shop Merchant NPC ----
   const merchantSprite = assets.anim('magician', 'frame_', 6, true);
@@ -382,6 +390,13 @@ async function initGame() {
     const playerScreen = tileToScreen(playerEntity.pos.x, playerEntity.pos.y);
     camera.follow(playerScreen.x, playerScreen.y);
     camera.update();
+
+    // Update player glow position
+    playerGlow.style.left = `${playerScreen.x + camera.container.x - 20}px`;
+    playerGlow.style.top = `${playerScreen.y + camera.container.y - 40}px`;
+
+    // Update lighting
+    lighting.update(playerScreen.x, playerScreen.y);
 
     // Telemetry tick
     telemetry.tick();

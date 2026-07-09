@@ -27,17 +27,13 @@ const SHEETS = [
   ['elemental',         'sheets/elemental.png',           'atlases/elemental.json'],
   ['magician',          'sheets/magician.png',            'atlases/magician.json'],
   ['slime',             'sheets/slime.png',               'atlases/slime.json'],
-  // Original sheets (terrain, VFX, UI)
+  // Original sheets (terrain, VFX only — items/weapons/UI use CSS now)
   ['riftPortal',        'sheets/rift-portal.png',         'atlases/rift-portal.json'],
   ['terrainGarden',     'sheets/terrain-garden.png',      'atlases/terrain-garden.json'],
   ['terrainWalls',      'sheets/terrain-walls.png',       'atlases/terrain-walls.json'],
   ['vfxSlash',          'sheets/vfx-slash.png',           'atlases/vfx-slash.json'],
   ['vfxProjectiles',    'sheets/vfx-projectiles.png',     'atlases/vfx-projectiles.json'],
   ['vfxAoe',            'sheets/vfx-aoe.png',             'atlases/vfx-aoe.json'],
-  ['weapons',           'sheets/weapons-sheet.png',       'atlases/weapons.json'],
-  ['items',             'sheets/items-sheet.png',         'atlases/items.json'],
-  ['ui',                'sheets/ui-sheet.png',            'atlases/ui.json'],
-  ['skills',            'sheets/skills-sheet.png',        'atlases/skills.json'],
 ];
 
 /**
