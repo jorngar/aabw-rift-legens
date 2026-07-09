@@ -38,8 +38,9 @@ export function renderTileMap(assets, grid, parent) {
 
       let texture;
       if (tileType === TILE_TYPES.WALL) {
-        const idx = (y * 13 + x * 7) % wallFrames.length;
-        texture = wallSheet.textures[wallFrames[idx]];
+        // Use stone tile for walls instead of wall sheet (which is too dark)
+        const idx = ((x * 31 + y * 17) + 8) % terrainFrames.length;
+        texture = terrainSheet.textures[terrainFrames[idx]];
       } else {
         // Use more frame variety to reduce repetition
         const framesPerType = Math.max(1, Math.floor(terrainFrames.length / 6));
@@ -60,8 +61,13 @@ export function renderTileMap(assets, grid, parent) {
       sprite.scale.set(128 / texW, 64 / texH);
 
       // Light tint for variety (tiles are already brightened)
-      const tintVariants = [0xffffff, 0xf0f0f0, 0xe8e8e8, 0xf5f5f0];
-      sprite.tint = tintVariants[(x + y) % tintVariants.length];
+      // Darker tint for wall tiles
+      if (tileType === TILE_TYPES.WALL) {
+        sprite.tint = 0x888899; // darker for walls
+      } else {
+        const tintVariants = [0xffffff, 0xf0f0f0, 0xe8e8e8, 0xf5f5f0];
+        sprite.tint = tintVariants[(x + y) % tintVariants.length];
+      }
 
       const pos = tileToScreen(x, y);
       sprite.x = pos.x;
@@ -111,8 +117,8 @@ export function generateGardenMap(width = 16, height = 16) {
       else if (r < 25) {
         row.push(TILE_TYPES.STONE);
       }
-      // Occasional wall pillar
-      else if (r < 30 && x > 2 && x < width - 2 && y > 2 && y < height - 2) {
+      // Occasional wall pillar (very rare)
+      else if (r < 20 && x > 4 && x < width - 4 && y > 4 && y < height - 4) {
         row.push(TILE_TYPES.WALL);
       }
       // Default grass
