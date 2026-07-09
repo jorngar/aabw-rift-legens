@@ -20,6 +20,7 @@ import { PLAYER_DEFAULTS, ENEMIES, SKILLS, CLIENT, GOLD_DROPS } from '@shared/co
 
 // UI
 import { showTitleScreen } from './ui/titleScreen.js';
+import { showClassSelection, getClassConfig } from './ui/classSelect.js';
 import { AgentPanel } from './ui/agentPanel.js';
 import { ShopUI } from './ui/shopUI.js';
 import { PurchaseSimulator } from './ui/purchaseUI.js';
@@ -27,13 +28,21 @@ import { Minimap } from './ui/minimap.js';
 import { createDamageNumber, screenShake, flashRed, goldenFlash, showVictory, showDefeat } from './ui/screenEffects.js';
 import { showSkillEffect, showDamageHit, showGoldDrop } from './ui/skillVFX.js';
 import { LightingSystem } from './ui/lighting.js';
+import { addGardenProps } from './ui/gardenProps.js';
 import { updateEnemyHealthBars } from './ui/enemyHealthBars.js';
 import { DemoRunner } from './demo/scenarioRunner.js';
 
 // ---- Bootstrap ----
-showTitleScreen(() => initGame());
+showTitleScreen(() => {
+  showClassSelection((classId) => {
+    initGame(classId);
+  });
+});
 
-async function initGame() {
+async function initGame(classId = 'warrior') {
+  const classConfig = getClassConfig(classId);
+  console.log(`[RiftSEED] Playing as ${classConfig.name} (${classId})`);
+
   const container = document.getElementById('game-container');
 
   const app = new PIXI.Application({
@@ -76,6 +85,10 @@ async function initGame() {
   // ---- Render Tile Map ----
   const camera = new Camera(app);
   renderTileMap(assets, grid, camera.container);
+
+  // Add garden props (trees, torches, crystals, flowers)
+  addGardenProps(camera.container, grid);
+
   app.stage.addChild(camera.container);
 
   // Snap camera to player start position immediately
