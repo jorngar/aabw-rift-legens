@@ -60,30 +60,70 @@ export function renderTileMap(assets, grid, parent) {
       // Add subtle detail based on type
       if (tileType === TILE_TYPES.GRASS) {
         // Grass tufts
-        g.lineStyle(1, 0x4a8b45, 0.3);
-        for (let i = 0; i < 3; i++) {
-          const gx = (Math.sin(x * 7 + y * 13 + i * 2) * 20);
-          const gy = (Math.cos(x * 11 + y * 7 + i * 3) * 10);
-          g.moveTo(gx, gy - 4);
-          g.lineTo(gx + 2, gy - 8);
-          g.moveTo(gx, gy - 4);
-          g.lineTo(gx - 2, gy - 7);
+        g.lineStyle(1, 0x4a8b45, 0.4);
+        for (let i = 0; i < 4; i++) {
+          const gx = (Math.sin(x * 7 + y * 13 + i * 2.5) * 22);
+          const gy = (Math.cos(x * 11 + y * 7 + i * 3.1) * 10);
+          g.moveTo(gx, gy - 3);
+          g.lineTo(gx + 2, gy - 9);
+          g.moveTo(gx, gy - 3);
+          g.lineTo(gx - 2, gy - 8);
+          g.moveTo(gx, gy - 3);
+          g.lineTo(gx + 1, gy - 7);
+        }
+        // Occasional flower
+        if ((x * 17 + y * 23) % 11 === 0) {
+          g.lineStyle(0);
+          g.beginFill(0xdddd55, 0.6);
+          g.drawCircle(Math.sin(x * 3) * 15, Math.cos(y * 5) * 8, 2);
+          g.endFill();
         }
       } else if (tileType === TILE_TYPES.STONE) {
         // Stone cracks
-        g.lineStyle(1, 0x5a5a6a, 0.3);
-        g.moveTo(-15, -5);
-        g.lineTo(10, 5);
-        g.moveTo(-5, 8);
-        g.lineTo(15, -3);
+        g.lineStyle(1, 0x5a5a6a, 0.35);
+        g.moveTo(-18, -6);
+        g.lineTo(5, 2);
+        g.lineTo(15, -4);
+        g.moveTo(-8, 8);
+        g.lineTo(12, 0);
+        // Occasional pebble
+        if ((x * 13 + y * 19) % 9 === 0) {
+          g.lineStyle(0);
+          g.beginFill(0x7a7a8a, 0.4);
+          g.drawCircle(Math.sin(x * 5) * 18, Math.cos(y * 3) * 8, 3);
+          g.endFill();
+        }
+      } else if (tileType === TILE_TYPES.DIRT) {
+        // Dirt texture lines
+        g.lineStyle(1, 0x6a5a3a, 0.3);
+        g.moveTo(-20, -2);
+        g.lineTo(-5, 3);
+        g.moveTo(5, -5);
+        g.lineTo(20, 0);
+        // Small rock
+        if ((x * 11 + y * 7) % 8 === 0) {
+          g.lineStyle(0);
+          g.beginFill(0x8a7a5a, 0.5);
+          g.drawCircle(Math.cos(x * 7) * 16, Math.sin(y * 9) * 6, 2.5);
+          g.endFill();
+        }
       } else if (tileType === TILE_TYPES.RIFT_CRACK) {
         // Purple glow lines
-        g.lineStyle(1, 0x9a6abb, 0.4);
-        g.moveTo(-20, 0);
-        g.lineTo(0, -10);
-        g.lineTo(20, 0);
-        g.moveTo(0, -10);
-        g.lineTo(0, 10);
+        g.lineStyle(1.5, 0x9a6abb, 0.5);
+        g.moveTo(-22, 0);
+        g.lineTo(0, -12);
+        g.lineTo(22, 0);
+        g.moveTo(0, -12);
+        g.lineTo(0, 12);
+        g.moveTo(-10, 6);
+        g.lineTo(10, 6);
+        // Glow dots
+        g.lineStyle(0);
+        g.beginFill(0xaa77dd, 0.4);
+        g.drawCircle(0, 0, 3);
+        g.drawCircle(-12, -4, 2);
+        g.drawCircle(10, 4, 2);
+        g.endFill();
       }
 
       const pos = tileToScreen(x, y);

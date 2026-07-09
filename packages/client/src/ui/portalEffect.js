@@ -57,35 +57,49 @@ export function createPortal() {
     animation: portalDiamond 1.5s ease-in-out infinite;
   `;
 
-  // Swirl particles
+  // Swirl particles (more of them, tighter spiral)
   const particleContainer = document.createElement('div');
   particleContainer.style.cssText = 'position:absolute;top:0;left:0;width:70px;height:100px;overflow:hidden;border-radius:50%;';
 
-  for (let i = 0; i < 8; i++) {
+  for (let i = 0; i < 12; i++) {
     const particle = document.createElement('div');
-    const angle = (i / 8) * 360;
-    const delay = (i / 8) * 2;
+    const delay = (i / 12) * 2;
+    const size = 2 + Math.random() * 2;
+    const color = i % 3 === 0 ? 'rgba(232,255,71,0.8)' : i % 3 === 1 ? 'rgba(168,85,247,0.7)' : 'rgba(74,158,255,0.7)';
     particle.style.cssText = `
       position: absolute;
-      width: 3px; height: 3px;
-      background: rgba(232,255,71,0.7);
+      width: ${size}px; height: ${size}px;
+      background: ${color};
       border-radius: 50%;
       top: 50%; left: 50%;
-      animation: portalParticle 2s ${delay}s linear infinite;
-      box-shadow: 0 0 4px rgba(232,255,71,0.5);
+      animation: portalParticle 1.8s ${delay}s linear infinite;
+      box-shadow: 0 0 4px ${color};
     `;
     particleContainer.appendChild(particle);
   }
 
-  // Rune marks (rotating)
+  // Rotating rune ring
   const runes = document.createElement('div');
   runes.style.cssText = `
     width: 90px; height: 120px;
-    border: 1px solid rgba(168,85,247,0.2);
+    border: 1px solid rgba(168,85,247,0.25);
+    border-top: 2px solid rgba(232,255,71,0.3);
+    border-bottom: 2px solid rgba(74,158,255,0.3);
     border-radius: 50%;
     position: absolute;
     top: -10px; left: -10px;
-    animation: portalRunes 8s linear infinite;
+    animation: portalRunes 6s linear infinite;
+  `;
+
+  // Second counter-rotating ring
+  const runes2 = document.createElement('div');
+  runes2.style.cssText = `
+    width: 110px; height: 140px;
+    border: 1px dashed rgba(168,85,247,0.15);
+    border-radius: 50%;
+    position: absolute;
+    top: -20px; left: -20px;
+    animation: portalRunes 10s linear infinite reverse;
   `;
 
   container.appendChild(outerGlow);
@@ -93,6 +107,7 @@ export function createPortal() {
   container.appendChild(diamond);
   container.appendChild(particleContainer);
   container.appendChild(runes);
+  container.appendChild(runes2);
 
   // CSS animations
   const style = document.createElement('style');

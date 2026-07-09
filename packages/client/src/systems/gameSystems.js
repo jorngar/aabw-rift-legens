@@ -36,14 +36,22 @@ export function movementSystem(world, dt, emitEvent) {
 
 /**
  * Sprite sync system: updates PixiJS sprite positions from entity positions.
- * Does NOT swap textures — keeps the sprite animating from its full sheet.
+ * Includes idle bobbing animation.
  */
 export function spriteSyncSystem(world, dt) {
+  const time = Date.now() / 1000;
   for (const entity of world.query('pos', 'sprite')) {
     const screenPos = tileToScreen(entity.pos.x, entity.pos.y);
     entity.sprite.x = screenPos.x;
-    entity.sprite.y = screenPos.y;
-    // Don't swap textures — it causes disappearing sprites
+
+    // Idle bobbing: subtle up/down when not moving
+    if (!entity.isMoving) {
+      const bobSpeed = entity.isPlayer ? 2.5 : 2.0;
+      const bobAmount = entity.isPlayer ? 2 : 1.5;
+      entity.sprite.y = screenPos.y + Math.sin(time * bobSpeed + entity.id) * bobAmount;
+    } else {
+      entity.sprite.y = screenPos.y;
+    }
   }
 }
 
