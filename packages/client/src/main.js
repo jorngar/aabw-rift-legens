@@ -167,7 +167,7 @@ async function initGame() {
     const sprite = assets.anim(sheetKey, 'frame_', 8, true);
     sprite.anchor.set(0.5, 0.8);
     sprite.scale.set(0.5);
-    sprite.tint = 0xeeeeff; // bright tint for visibility
+    sprite.tint = 0xffffff; // full brightness for visibility
 
     const entity = createEntity({
       isEnemy: true, enemyType: type, name: def.name,
