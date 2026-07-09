@@ -77,6 +77,13 @@ async function initGame() {
   renderTileMap(assets, grid, camera.container);
   app.stage.addChild(camera.container);
 
+  // Snap camera to player start position immediately
+  const startScreen = tileToScreen(8, 8);
+  camera.targetX = startScreen.x;
+  camera.targetY = startScreen.y;
+  camera.container.x = app.screen.width / 2 - startScreen.x;
+  camera.container.y = app.screen.height / 2 - startScreen.y;
+
   // ---- Create Player ----
   const heroSheet = assets.sheets.hero;
   const playerSprite = assets.anim('hero', 'frame_', 8, true);
