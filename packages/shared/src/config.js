@@ -32,7 +32,7 @@ export const ENEMIES = Object.freeze({
   shadowBeast: {
     name: 'Shadow Beast',
     hp: 200,
-    damage: 8,
+    damage: 3,
     speed: 1.5,
     aggroRange: 4,
     attackRange: 1.2,
@@ -42,7 +42,7 @@ export const ENEMIES = Object.freeze({
   riftKnight: {
     name: 'Rift Knight',
     hp: 500,
-    damage: 20,
+    damage: 8,
     speed: 1.0,
     aggroRange: 5,
     attackRange: 1.5,
