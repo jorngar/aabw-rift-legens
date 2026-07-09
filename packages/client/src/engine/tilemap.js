@@ -97,12 +97,6 @@ export function generateGardenMap(width = 16, height = 16) {
   for (let y = 0; y < height; y++) {
     const row = [];
     for (let x = 0; x < width; x++) {
-      // Border walls
-      if (x === 0 || y === 0 || x === width - 1 || y === height - 1) {
-        row.push(TILE_TYPES.WALL);
-        continue;
-      }
-
       const r = rand(x, y);
 
       // Rift crack area near center
@@ -110,16 +104,12 @@ export function generateGardenMap(width = 16, height = 16) {
         row.push(TILE_TYPES.RIFT_CRACK);
       }
       // Dirt paths
-      else if (r < 10) {
+      else if (r < 12) {
         row.push(TILE_TYPES.DIRT);
       }
       // Stone patches
-      else if (r < 25) {
+      else if (r < 30) {
         row.push(TILE_TYPES.STONE);
-      }
-      // Occasional wall pillar (very rare)
-      else if (r < 20 && x > 4 && x < width - 4 && y > 4 && y < height - 4) {
-        row.push(TILE_TYPES.WALL);
       }
       // Default grass
       else {
