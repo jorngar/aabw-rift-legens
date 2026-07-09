@@ -1,0 +1,21 @@
+{
+  "name": "rift-seed-hackathon",
+  "version": "0.1.0",
+  "private": true,
+  "description": "2.5D Isometric Action RPG — SEED Garden x Solo Leveling rift system with 3 AI agents",
+  "scripts": {
+    "dev": "pnpm --filter @rift-seed/client dev",
+    "dev:server": "pnpm --filter @rift-seed/server dev",
+    "dev:all": "concurrently \"pnpm dev\" \"pnpm dev:server\"",
+    "build": "pnpm --filter @rift-seed/shared build && pnpm --filter @rift-seed/client build",
+    "lint": "eslint packages/*/src/**/*.{ts,js}",
+    "clean": "rm -rf packages/*/dist packages/*/node_modules"
+  },
+  "devDependencies": {
+    "concurrently": "^9.1.0",
+    "typescript": "^5.7.0"
+  },
+  "engines": {
+    "node": ">=20"
+  }
+}

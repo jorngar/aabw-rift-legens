@@ -1,0 +1,124 @@
+{
+  "frames": {
+    "gunblade": {
+      "frame": {
+        "x": 0,
+        "y": 0,
+        "w": 268,
+        "h": 768
+      },
+      "rotated": false,
+      "trimmed": false,
+      "spriteSourceSize": {
+        "x": 0,
+        "y": 0,
+        "w": 268,
+        "h": 768
+      },
+      "sourceSize": {
+        "w": 268,
+        "h": 768
+      }
+    },
+    "rift_staff": {
+      "frame": {
+        "x": 268,
+        "y": 0,
+        "w": 268,
+        "h": 768
+      },
+      "rotated": false,
+      "trimmed": false,
+      "spriteSourceSize": {
+        "x": 0,
+        "y": 0,
+        "w": 268,
+        "h": 768
+      },
+      "sourceSize": {
+        "w": 268,
+        "h": 768
+      }
+    },
+    "pistol": {
+      "frame": {
+        "x": 536,
+        "y": 0,
+        "w": 268,
+        "h": 768
+      },
+      "rotated": false,
+      "trimmed": false,
+      "spriteSourceSize": {
+        "x": 0,
+        "y": 0,
+        "w": 268,
+        "h": 768
+      },
+      "sourceSize": {
+        "w": 268,
+        "h": 768
+      }
+    },
+    "seed_rifle": {
+      "frame": {
+        "x": 804,
+        "y": 0,
+        "w": 268,
+        "h": 768
+      },
+      "rotated": false,
+      "trimmed": false,
+      "spriteSourceSize": {
+        "x": 0,
+        "y": 0,
+        "w": 268,
+        "h": 768
+      },
+      "sourceSize": {
+        "w": 268,
+        "h": 768
+      }
+    },
+    "rune_daggers": {
+      "frame": {
+        "x": 1072,
+        "y": 0,
+        "w": 268,
+        "h": 768
+      },
+      "rotated": false,
+      "trimmed": false,
+      "spriteSourceSize": {
+        "x": 0,
+        "y": 0,
+        "w": 268,
+        "h": 768
+      },
+      "sourceSize": {
+        "w": 268,
+        "h": 768
+      }
+    }
+  },
+  "meta": {
+    "app": "z-ai-sprite-slicer",
+    "version": "1.0",
+    "image": "weapons-sheet.png",
+    "format": "RGBA8888",
+    "size": {
+      "w": 1344,
+      "h": 768
+    },
+    "scale": 1,
+    "description": "5 weapon icons",
+    "grid": {
+      "cols": 5,
+      "rows": 1,
+      "frameWidth": 268,
+      "frameHeight": 768
+    },
+    "framesKept": 5,
+    "framesSkipped": 0
+  }
+}

@@ -1,0 +1,144 @@
+{
+  "frames": {
+    "slash_1": {
+      "frame": {
+        "x": 0,
+        "y": 0,
+        "w": 224,
+        "h": 768
+      },
+      "rotated": false,
+      "trimmed": false,
+      "spriteSourceSize": {
+        "x": 0,
+        "y": 0,
+        "w": 224,
+        "h": 768
+      },
+      "sourceSize": {
+        "w": 224,
+        "h": 768
+      }
+    },
+    "slash_2": {
+      "frame": {
+        "x": 224,
+        "y": 0,
+        "w": 224,
+        "h": 768
+      },
+      "rotated": false,
+      "trimmed": false,
+      "spriteSourceSize": {
+        "x": 0,
+        "y": 0,
+        "w": 224,
+        "h": 768
+      },
+      "sourceSize": {
+        "w": 224,
+        "h": 768
+      }
+    },
+    "slash_3": {
+      "frame": {
+        "x": 448,
+        "y": 0,
+        "w": 224,
+        "h": 768
+      },
+      "rotated": false,
+      "trimmed": false,
+      "spriteSourceSize": {
+        "x": 0,
+        "y": 0,
+        "w": 224,
+        "h": 768
+      },
+      "sourceSize": {
+        "w": 224,
+        "h": 768
+      }
+    },
+    "slash_4": {
+      "frame": {
+        "x": 672,
+        "y": 0,
+        "w": 224,
+        "h": 768
+      },
+      "rotated": false,
+      "trimmed": false,
+      "spriteSourceSize": {
+        "x": 0,
+        "y": 0,
+        "w": 224,
+        "h": 768
+      },
+      "sourceSize": {
+        "w": 224,
+        "h": 768
+      }
+    },
+    "slash_5": {
+      "frame": {
+        "x": 896,
+        "y": 0,
+        "w": 224,
+        "h": 768
+      },
+      "rotated": false,
+      "trimmed": false,
+      "spriteSourceSize": {
+        "x": 0,
+        "y": 0,
+        "w": 224,
+        "h": 768
+      },
+      "sourceSize": {
+        "w": 224,
+        "h": 768
+      }
+    },
+    "slash_6": {
+      "frame": {
+        "x": 1120,
+        "y": 0,
+        "w": 224,
+        "h": 768
+      },
+      "rotated": false,
+      "trimmed": false,
+      "spriteSourceSize": {
+        "x": 0,
+        "y": 0,
+        "w": 224,
+        "h": 768
+      },
+      "sourceSize": {
+        "w": 224,
+        "h": 768
+      }
+    }
+  },
+  "meta": {
+    "app": "z-ai-sprite-slicer",
+    "version": "1.0",
+    "image": "vfx-slash.png",
+    "format": "RGBA8888",
+    "size": {
+      "w": 1344,
+      "h": 768
+    },
+    "scale": 1,
+    "description": "Sword slash arc VFX, 6 animation frames",
+    "grid": {
+      "cols": 6,
+      "rows": 1,
+      "frameWidth": 224,
+      "frameHeight": 768
+    },
+    "framesKept": 6,
+    "framesSkipped": 0
+  }
+}

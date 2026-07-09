@@ -1,0 +1,144 @@
+{
+  "frames": {
+    "aoe_1": {
+      "frame": {
+        "x": 0,
+        "y": 0,
+        "w": 170,
+        "h": 1024
+      },
+      "rotated": false,
+      "trimmed": false,
+      "spriteSourceSize": {
+        "x": 0,
+        "y": 0,
+        "w": 170,
+        "h": 1024
+      },
+      "sourceSize": {
+        "w": 170,
+        "h": 1024
+      }
+    },
+    "aoe_2": {
+      "frame": {
+        "x": 170,
+        "y": 0,
+        "w": 170,
+        "h": 1024
+      },
+      "rotated": false,
+      "trimmed": false,
+      "spriteSourceSize": {
+        "x": 0,
+        "y": 0,
+        "w": 170,
+        "h": 1024
+      },
+      "sourceSize": {
+        "w": 170,
+        "h": 1024
+      }
+    },
+    "aoe_3": {
+      "frame": {
+        "x": 340,
+        "y": 0,
+        "w": 170,
+        "h": 1024
+      },
+      "rotated": false,
+      "trimmed": false,
+      "spriteSourceSize": {
+        "x": 0,
+        "y": 0,
+        "w": 170,
+        "h": 1024
+      },
+      "sourceSize": {
+        "w": 170,
+        "h": 1024
+      }
+    },
+    "aoe_4": {
+      "frame": {
+        "x": 510,
+        "y": 0,
+        "w": 170,
+        "h": 1024
+      },
+      "rotated": false,
+      "trimmed": false,
+      "spriteSourceSize": {
+        "x": 0,
+        "y": 0,
+        "w": 170,
+        "h": 1024
+      },
+      "sourceSize": {
+        "w": 170,
+        "h": 1024
+      }
+    },
+    "aoe_5": {
+      "frame": {
+        "x": 680,
+        "y": 0,
+        "w": 170,
+        "h": 1024
+      },
+      "rotated": false,
+      "trimmed": false,
+      "spriteSourceSize": {
+        "x": 0,
+        "y": 0,
+        "w": 170,
+        "h": 1024
+      },
+      "sourceSize": {
+        "w": 170,
+        "h": 1024
+      }
+    },
+    "aoe_6": {
+      "frame": {
+        "x": 850,
+        "y": 0,
+        "w": 170,
+        "h": 1024
+      },
+      "rotated": false,
+      "trimmed": false,
+      "spriteSourceSize": {
+        "x": 0,
+        "y": 0,
+        "w": 170,
+        "h": 1024
+      },
+      "sourceSize": {
+        "w": 170,
+        "h": 1024
+      }
+    }
+  },
+  "meta": {
+    "app": "z-ai-sprite-slicer",
+    "version": "1.0",
+    "image": "vfx-aoe.png",
+    "format": "RGBA8888",
+    "size": {
+      "w": 1024,
+      "h": 1024
+    },
+    "scale": 1,
+    "description": "AoE rune circle VFX, 6 expansion/burst frames",
+    "grid": {
+      "cols": 6,
+      "rows": 1,
+      "frameWidth": 170,
+      "frameHeight": 1024
+    },
+    "framesKept": 6,
+    "framesSkipped": 0
+  }
+}

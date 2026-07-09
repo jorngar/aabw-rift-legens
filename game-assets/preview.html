@@ -1,0 +1,106 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<title>Rift SEED — Sprite Preview</title>
+<style>
+  html, body { margin: 0; padding: 0; background: #0a0612; color: #cbb6e6; font-family: 'Inter', system-ui, sans-serif; }
+  #app { width: 100vw; height: 100vh; display: block; }
+  .hud { position: fixed; top: 12px; left: 12px; padding: 10px 14px; background: rgba(20,12,40,.7);
+         border: 1px solid #6a3fb5; border-radius: 8px; font-size: 12px; backdrop-filter: blur(6px); }
+  .hud b { color: #b78bff; }
+</style>
+</head>
+<body>
+  <div id="app"></div>
+  <div class="hud">
+    <b>Rift SEED preview</b><br/>
+    Click anywhere to spawn a portal.<br/>
+    Press <b>1</b>-<b>6</b> to switch animation.
+  </div>
+
+<script src="https://cdn.jsdelivr.net/npm/pixi.js@7.4.0/dist/pixi.min.js"></script>
+<script type="module">
+// Minimal inline preview. Mount /game-assets/ at the same origin to use.
+const ASSET_BASE = '/game-assets/';
+
+const SHEETS = [
+  ['seedCadetWalk',   'sheets/seed-cadet-walk.png',   'atlases/seed-cadet-walk.json'],
+  ['riftPortal',      'sheets/rift-portal.png',       'atlases/rift-portal.json'],
+  ['shadowBeast',     'sheets/shadow-beast.png',      'atlases/shadow-beast.json'],
+  ['vfxSlash',        'sheets/vfx-slash.png',         'atlases/vfx-slash.json'],
+];
+
+const app = new PIXI.Application({ background: '#0a0612', antialias: true, resizeTo: window });
+document.getElementById('app').appendChild(app.view);
+
+async function loadAll() {
+  const sheets = {};
+  for (const [key, sheetFile, atlasFile] of SHEETS) {
+    const atlas = await fetch(ASSET_BASE + atlasFile).then(r => r.json());
+    const tex = await PIXI.Assets.load(ASSET_BASE + sheetFile);
+    const ss = new PIXI.Spritesheet(tex, atlas);
+    await ss.parse();
+    sheets[key] = ss;
+  }
+  return sheets;
+}
+
+function anim(sheets, key, fps = 12) {
+  const frames = Object.keys(sheets[key].textures).sort().map(k => sheets[key].textures[k]);
+  const s = new PIXI.AnimatedSprite(frames);
+  s.animationSpeed = fps / 60;
+  s.loop = true;
+  s.play();
+  return s;
+}
+
+loadAll().then(sheets => {
+  const cx = app.screen.width / 2, cy = app.screen.height / 2;
+
+  // Tiles
+  for (let y = 0; y < 5; y++) for (let x = 0; x < 5; x++) {
+    const t = new PIXI.Sprite(sheets.seedCadetWalk.textures['frame_001']); // placeholder tile
+    t.anchor.set(0.5, 0.5);
+    t.alpha = 0.15;
+    t.scale.set(0.5);
+    t.x = cx + (x - y) * 80;
+    t.y = cy + (x + y) * 40;
+    app.stage.addChild(t);
+  }
+
+  // Cadet center
+  const cadet = anim(sheets, 'seedCadetWalk', 12);
+  cadet.anchor.set(0.5, 0.9); cadet.scale.set(0.6); cadet.x = cx; cadet.y = cy;
+  app.stage.addChild(cadet);
+
+  // Portal left
+  const portal = anim(sheets, 'riftPortal', 8);
+  portal.anchor.set(0.5, 0.5); portal.scale.set(0.5);
+  portal.x = cx - 200; portal.y = cy + 50;
+  app.stage.addChild(portal);
+
+  // Shadow beast right
+  const beast = anim(sheets, 'shadowBeast', 10);
+  beast.anchor.set(0.5, 0.9); beast.scale.set(0.6);
+  beast.x = cx + 200; beast.y = cy + 30;
+  app.stage.addChild(beast);
+
+  // Click spawns slash VFX
+  app.stage.eventMode = 'static';
+  app.stage.hitArea = app.screen;
+  app.stage.on('pointerdown', (e) => {
+    const slash = anim(sheets, 'vfxSlash', 18);
+    slash.loop = false;
+    slash.anchor.set(0.5, 0.5); slash.scale.set(0.5);
+    slash.x = e.global.x; slash.y = e.global.y;
+    app.stage.addChild(slash);
+    slash.onComplete = () => app.stage.removeChild(slash);
+  });
+}).catch(err => {
+  document.getElementById('app').innerHTML =
+    '<div style="padding:20px;color:#f88">Failed to load sprites. Make sure /game-assets/ is served at the site root.<br/><pre>' + err.message + '</pre></div>';
+});
+</script>
+</body>
+</html>
