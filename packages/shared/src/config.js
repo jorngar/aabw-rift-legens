@@ -16,36 +16,37 @@ export const TILE = Object.freeze({
 
 /** Player starting stats */
 export const PLAYER_DEFAULTS = Object.freeze({
-  hp: 100,
-  maxHp: 100,
-  mp: 50,
-  maxMp: 50,
-  speed: 3,          // tiles per second
-  attackDamage: 25,
-  attackCooldownMs: 800,
-  attackRange: 1.5,  // tiles
+  hp: 250,
+  maxHp: 250,
+  mp: 80,
+  maxMp: 80,
+  speed: 3,
+  attackDamage: 30,
+  attackCooldownMs: 600,
+  attackRange: 2.0,
+  startingGold: 100,
 });
 
 /** Enemy definitions */
 export const ENEMIES = Object.freeze({
   shadowBeast: {
     name: 'Shadow Beast',
-    hp: 60,
-    damage: 15,
-    speed: 1.8,
+    hp: 40,
+    damage: 8,
+    speed: 1.5,
     aggroRange: 4,
     attackRange: 1.2,
-    attackCooldownMs: 1200,
+    attackCooldownMs: 1500,
     xpReward: 25,
   },
   riftKnight: {
     name: 'Rift Knight',
-    hp: 200,
-    damage: 35,
-    speed: 1.2,
+    hp: 150,
+    damage: 20,
+    speed: 1.0,
     aggroRange: 5,
     attackRange: 1.5,
-    attackCooldownMs: 2000,
+    attackCooldownMs: 2500,
     xpReward: 100,
     isBoss: true,
   },
