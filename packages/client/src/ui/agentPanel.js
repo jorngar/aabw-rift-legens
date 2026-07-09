@@ -26,8 +26,13 @@ export class AgentPanel {
     this.el.style.cssText = 'position:fixed;top:0;right:0;width:420px;height:100vh;background:rgba(10,6,18,0.97);border-left:1px solid #2a2a3a;z-index:90;overflow-y:auto;font-family:monospace;font-size:11px;color:#aaa;padding:0;display:none;';
     document.body.appendChild(this.el);
 
+    this._firstOpen = true;
+
     window.addEventListener('keydown', (e) => {
-      if (e.key === 'Tab') { e.preventDefault(); this.toggle(); }
+      if (e.key === 'Tab') {
+        e.preventDefault();
+        this.toggle();
+      }
     });
 
     this._interval = setInterval(() => { if (this.visible) this.render(); }, 500);
@@ -37,7 +42,29 @@ export class AgentPanel {
   toggle() {
     this.visible = !this.visible;
     this.el.style.display = this.visible ? 'block' : 'none';
-    if (this.visible) this.render();
+    if (this.visible) {
+      this.render();
+      if (this._firstOpen) {
+        this._firstOpen = false;
+        this._showExplainer();
+      }
+    }
+  }
+
+  _showExplainer() {
+    const overlay = document.createElement('div');
+    overlay.style.cssText = 'position:fixed;top:50%;left:50%;transform:translate(-50%,-50%);background:rgba(10,6,18,0.97);border:2px solid #e8ff47;padding:24px 32px;border-radius:12px;z-index:999;font-family:monospace;max-width:440px;text-align:center;box-shadow:0 0 40px rgba(232,255,71,0.15);';
+    overlay.innerHTML = `
+      <div style="color:#e8ff47;font-size:16px;font-weight:bold;margin-bottom:12px;">AI Agent Dashboard</div>
+      <div style="color:#aaa;font-size:12px;line-height:1.8;text-align:left;">
+        <div style="margin-bottom:8px;"><span style="color:#4a9eff;">📡 TELEMETRY</span> — Tracks game events in real-time. Detects balance anomalies and recommends nerfs/buffs.</div>
+        <div style="margin-bottom:8px;"><span style="color:#a855f7;">🔬 A/B TESTING</span> — Compares two game variants with statistical significance testing. Auto-promotes winners.</div>
+        <div style="margin-bottom:8px;"><span style="color:#44ff44;">🤖 DATA PIPELINE</span> — Transforms play logs into robotics-ready CSV. Visualizes trajectories and decisions.</div>
+      </div>
+      <div style="color:#666;font-size:10px;margin-top:16px;">Click tabs to switch views. All data is live from your gameplay.</div>
+      <div style="color:#e8ff47;font-size:11px;margin-top:12px;cursor:pointer;" onclick="this.parentElement.remove();">Got it</div>
+    `;
+    document.body.appendChild(overlay);
   }
 
   render() {

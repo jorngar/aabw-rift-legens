@@ -36,27 +36,14 @@ export function movementSystem(world, dt, emitEvent) {
 
 /**
  * Sprite sync system: updates PixiJS sprite positions from entity positions.
+ * Does NOT swap textures — keeps the sprite animating from its full sheet.
  */
 export function spriteSyncSystem(world, dt) {
   for (const entity of world.query('pos', 'sprite')) {
     const screenPos = tileToScreen(entity.pos.x, entity.pos.y);
     entity.sprite.x = screenPos.x;
     entity.sprite.y = screenPos.y;
-
-    // Update animation
-    if (entity.isMoving && entity.walkAnim) {
-      if (!entity.sprite._isWalking) {
-        entity.sprite.textures = entity.walkAnim;
-        entity.sprite.play();
-        entity.sprite._isWalking = true;
-      }
-    } else if (!entity.isMoving && entity.idleAnim) {
-      if (entity.sprite._isWalking) {
-        entity.sprite.textures = entity.idleAnim;
-        entity.sprite.play();
-        entity.sprite._isWalking = false;
-      }
-    }
+    // Don't swap textures — it causes disappearing sprites
   }
 }
 

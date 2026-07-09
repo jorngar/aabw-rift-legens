@@ -80,7 +80,7 @@ async function initGame() {
   const heroSheet = assets.sheets.hero;
   const playerSprite = assets.anim('hero', 'frame_', 8, true);
   playerSprite.anchor.set(0.5, 0.8);
-  playerSprite.scale.set(0.28);
+  playerSprite.scale.set(0.55);
 
   const playerEntity = createEntity({
     isPlayer: true,
@@ -131,7 +131,7 @@ async function initGame() {
   // ---- Shop Merchant NPC ----
   const merchantSprite = assets.anim('magician', 'frame_', 6, true);
   merchantSprite.anchor.set(0.5, 0.8);
-  merchantSprite.scale.set(0.25);
+  merchantSprite.scale.set(0.5);
   const merchantPos = { x: 4, y: 6 };
   const mScreen = tileToScreen(merchantPos.x, merchantPos.y);
   merchantSprite.x = mScreen.x;
@@ -144,7 +144,7 @@ async function initGame() {
     const sheetKey = type === 'shadowBeast' ? 'skeleton' : 'ogre';
     const sprite = assets.anim(sheetKey, 'frame_', 8, true);
     sprite.anchor.set(0.5, 0.8);
-    sprite.scale.set(0.25);
+    sprite.scale.set(0.5);
 
     const entity = createEntity({
       isEnemy: true, enemyType: type, name: def.name,
@@ -173,7 +173,7 @@ async function initGame() {
   // ---- Portal Sprite ----
   const portalSprite = assets.anim('riftPortal', 'frame_', 8, true);
   portalSprite.anchor.set(0.5, 0.5);
-  portalSprite.scale.set(0.2);
+  portalSprite.scale.set(0.5);
   const portalScreen = tileToScreen(8, 3);
   portalSprite.x = portalScreen.x;
   portalSprite.y = portalScreen.y;

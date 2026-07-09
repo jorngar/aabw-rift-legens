@@ -120,7 +120,7 @@ export class RiftSystem {
     const sheetKey = type === 'shadowBeast' ? 'skeleton' : 'ogre';
     const sprite = this.assets.anim(sheetKey, 'frame_', 8, true);
     sprite.anchor.set(0.5, 0.8);
-    sprite.scale.set(0.25);
+    sprite.scale.set(0.5);
 
     const entity = createEntity({
       isEnemy: true, enemyType: type, name: def.name,

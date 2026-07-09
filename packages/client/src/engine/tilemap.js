@@ -38,12 +38,13 @@ export function renderTileMap(assets, grid, parent) {
 
       let texture;
       if (tileType === TILE_TYPES.WALL) {
-        const idx = (y * cols + x) % wallFrames.length;
+        const idx = (y * 13 + x * 7) % wallFrames.length;
         texture = wallSheet.textures[wallFrames[idx]];
       } else {
-        // Use terrain frames based on tile type
-        const baseIdx = Math.min(tileType * 4, terrainFrames.length - 1);
-        const variant = (x + y) % 4;
+        // Use more frame variety to reduce repetition
+        const framesPerType = Math.max(1, Math.floor(terrainFrames.length / 6));
+        const baseIdx = Math.min(tileType * framesPerType, terrainFrames.length - 1);
+        const variant = ((x * 31 + y * 17) % framesPerType);
         const frameIdx = Math.min(baseIdx + variant, terrainFrames.length - 1);
         texture = terrainSheet.textures[terrainFrames[frameIdx]];
       }
@@ -76,20 +77,42 @@ export function renderTileMap(assets, grid, parent) {
 }
 
 /**
- * Generate a garden map.
+ * Generate a garden map with more variation.
  */
 export function generateGardenMap(width = 16, height = 16) {
   const grid = [];
+  // Seed for pseudo-random
+  const rand = (x, y) => ((x * 2654435761 + y * 2246822519) >>> 0) % 100;
+
   for (let y = 0; y < height; y++) {
     const row = [];
     for (let x = 0; x < width; x++) {
+      // Border walls
       if (x === 0 || y === 0 || x === width - 1 || y === height - 1) {
         row.push(TILE_TYPES.WALL);
-      } else if (Math.abs(x - width / 2) < 2 && Math.abs(y - height / 2) < 2) {
+        continue;
+      }
+
+      const r = rand(x, y);
+
+      // Rift crack area near center
+      if (Math.abs(x - width / 2) < 2 && Math.abs(y - height / 2) < 2) {
         row.push(TILE_TYPES.RIFT_CRACK);
-      } else if ((x * 7 + y * 13) % 11 === 0) {
+      }
+      // Dirt paths
+      else if (r < 10) {
+        row.push(TILE_TYPES.DIRT);
+      }
+      // Stone patches
+      else if (r < 25) {
         row.push(TILE_TYPES.STONE);
-      } else {
+      }
+      // Occasional wall pillar
+      else if (r < 30 && x > 2 && x < width - 2 && y > 2 && y < height - 2) {
+        row.push(TILE_TYPES.WALL);
+      }
+      // Default grass
+      else {
         row.push(TILE_TYPES.GRASS);
       }
     }
