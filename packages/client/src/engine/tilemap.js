@@ -29,6 +29,14 @@ export function renderTileMap(assets, grid, parent) {
   const rows = grid.length;
   const cols = grid[0].length;
 
+  // Helper: vary a color by amount
+  const vary = (color, amount) => {
+    const r = Math.min(255, Math.max(0, ((color >> 16) & 0xff) + amount));
+    const g = Math.min(255, Math.max(0, ((color >> 8) & 0xff) + amount));
+    const b = Math.min(255, Math.max(0, (color & 0xff) + amount));
+    return (r << 16) | (g << 8) | b;
+  };
+
   // Color palette — clearly distinct colors per type
   const PALETTES = {
     [TILE_TYPES.GRASS]: [
