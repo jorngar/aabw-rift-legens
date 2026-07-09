@@ -116,13 +116,27 @@ export function showTitleScreen(onStart) {
     }, 1000);
   }, 4000);
 
-  // Handle Enter key
+  // Handle Enter key — with error protection
+  let started = false;
   const handler = (e) => {
-    if (e.key === 'Enter') {
+    if (e.key === 'Enter' && !started) {
+      started = true;
       el.style.transition = 'opacity 0.8s';
       el.style.opacity = '0';
-      setTimeout(() => { el.remove(); onStart(); }, 800);
       window.removeEventListener('keydown', handler);
+      setTimeout(() => {
+        el.remove();
+        try {
+          onStart();
+        } catch (err) {
+          console.error('[RiftSEED] Game init failed:', err);
+          // Show error instead of blank screen
+          const errEl = document.createElement('div');
+          errEl.style.cssText = 'position:fixed;top:50%;left:50%;transform:translate(-50%,-50%);color:#ff4444;font-family:monospace;font-size:14px;text-align:center;';
+          errEl.textContent = `Game init error: ${err.message}. Check console.`;
+          document.body.appendChild(errEl);
+        }
+      }, 800);
     }
   };
   window.addEventListener('keydown', handler);
