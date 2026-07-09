@@ -25,6 +25,7 @@ import { ShopUI } from './ui/shopUI.js';
 import { PurchaseSimulator } from './ui/purchaseUI.js';
 import { Minimap } from './ui/minimap.js';
 import { createDamageNumber, screenShake, flashRed, goldenFlash, showVictory, showDefeat } from './ui/screenEffects.js';
+import { showSkillEffect, showDamageHit, showGoldDrop } from './ui/skillVFX.js';
 import { DemoRunner } from './demo/scenarioRunner.js';
 
 // ---- Bootstrap ----
@@ -115,7 +116,7 @@ async function initGame() {
   const riftSystem = new RiftSystem(playerEntity, world, assets, camera, emitEvent, progressionSystem);
 
   // ---- Init UI ----
-  const agentPanel = new AgentPanel(telemetry, abTesting, dataLog);
+  const agentPanel = new AgentPanel(telemetry, abTesting, dataLog, progressionSystem);
   agentPanel.init();
 
   const shopUI = new ShopUI(inventorySystem);
@@ -187,7 +188,11 @@ async function initGame() {
     emitEvent,
     useSkillFn: (attacker, skillId, target, targetPos, emit) => {
       const result = useSkill(attacker, skillId, target, targetPos, emit);
-      if (result.success) progressionSystem.addSkillUse();
+      if (result.success) {
+        progressionSystem.addSkillUse();
+        const ps = tileToScreen(playerEntity.pos.x, playerEntity.pos.y);
+        showSkillEffect(skillId, ps.x + camera.container.x, ps.y + camera.container.y - 20);
+      }
       return result;
     },
   });
@@ -323,15 +328,17 @@ async function initGame() {
           const result = meleeAttack(playerEntity, target, emitEvent);
           if (result.hit) {
             const screen = tileToScreen(target.pos.x, target.pos.y);
-            createDamageNumber(screen.x + camera.container.x, screen.y + camera.container.y - 40, result.damage, result.isCrit);
-            if (result.isCrit) screenShake(3, 100);
+            const sx = screen.x + camera.container.x;
+            const sy = screen.y + camera.container.y - 30;
+            showDamageHit(sx, sy, result.damage, result.isCrit);
+            if (result.isCrit) screenShake(4, 150);
             if (result.killed) {
               playerEntity.attackTarget = null;
-              // Gold drop
               const drops = GOLD_DROPS[target.enemyType] || { min: 5, max: 15 };
               const gold = drops.min + Math.floor(Math.random() * (drops.max - drops.min));
               progressionSystem.addGold(gold);
               inventorySystem.gold = progressionSystem.gold;
+              showGoldDrop(sx, sy - 20, gold);
               progressionSystem.addKill(target.enemyType);
               progressionSystem.addXP(target.enemyType === 'riftKnight' ? 100 : 25, 'kill');
               if (target.sprite?.parent) target.sprite.parent.removeChild(target.sprite);
