@@ -15,8 +15,8 @@ export const TILE_TYPES = Object.freeze({
 });
 
 /**
- * Render an isometric tile map.
- * Tiles are positioned using tileToScreen and scaled to fit the grid.
+ * Render an isometric tile map using clean procedural tiles.
+ * Generates diamond-shaped tiles directly instead of using the noisy sheet.
  */
 export function renderTileMap(assets, grid, parent) {
   const container = new PIXI.Container();
@@ -24,63 +24,78 @@ export function renderTileMap(assets, grid, parent) {
   const rows = grid.length;
   const cols = grid[0].length;
 
-  const terrainSheet = assets.sheets.terrainGarden;
-  const wallSheet = assets.sheets.terrainWalls;
-
-  // Get all available frame IDs
-  const terrainFrames = Object.keys(terrainSheet.textures).sort();
-  const wallFrames = Object.keys(wallSheet.textures).sort();
+  // Tile colors by type
+  const TILE_COLORS = {
+    [TILE_TYPES.GRASS]:      { fill: 0x3a6b35, border: 0x2a5a28 },
+    [TILE_TYPES.STONE]:      { fill: 0x6a6a7a, border: 0x5a5a6a },
+    [TILE_TYPES.DIRT]:       { fill: 0x7a6a4a, border: 0x6a5a3a },
+    [TILE_TYPES.RIFT_CRACK]: { fill: 0x6a4a8a, border: 0x5a3a7a },
+    [TILE_TYPES.WALL]:       { fill: 0x4a4a5a, border: 0x3a3a4a },
+    [TILE_TYPES.PORTAL]:     { fill: 0x4a3a8a, border: 0x6a4aaa },
+  };
 
   for (let y = 0; y < rows; y++) {
     for (let x = 0; x < cols; x++) {
       const tileType = grid[y][x];
       if (tileType === -1) continue;
 
-      let texture;
-      if (tileType === TILE_TYPES.WALL) {
-        // Use light stone tile for walls
-        const idx = ((x * 31 + y * 17) + 8) % Math.min(terrainFrames.length, 30);
-        texture = terrainSheet.textures[terrainFrames[idx]];
-      } else {
-        // Only use first 40 frames (which are lighter tiles)
-        // Skip dark tiles by using a limited range
-        const maxFrame = Math.min(terrainFrames.length, 40);
-        const framesPerType = Math.max(1, Math.floor(maxFrame / 6));
-        const baseIdx = Math.min(tileType * framesPerType, maxFrame - 1);
-        const variant = ((x * 31 + y * 17) % framesPerType);
-        const frameIdx = Math.min(baseIdx + variant, maxFrame - 1);
-        texture = terrainSheet.textures[terrainFrames[frameIdx]];
-      }
+      const colors = TILE_COLORS[tileType] || TILE_COLORS[TILE_TYPES.GRASS];
 
-      if (!texture) continue;
+      // Create diamond-shaped tile graphic
+      const g = new PIXI.Graphics();
 
-      const sprite = new PIXI.Sprite(texture);
-      sprite.anchor.set(0.5, 0.5);
+      // Diamond shape (isometric)
+      const hw = 64; // half width
+      const hh = 32; // half height
 
-      // Scale tile to fit the isometric grid cell (128x64)
-      const texW = texture.width;
-      const texH = texture.height;
-      sprite.scale.set(128 / texW, 64 / texH);
+      g.beginFill(colors.fill);
+      g.lineStyle(1, colors.border, 0.5);
+      g.moveTo(0, -hh);    // top
+      g.lineTo(hw, 0);     // right
+      g.lineTo(0, hh);     // bottom
+      g.lineTo(-hw, 0);    // left
+      g.closePath();
+      g.endFill();
 
-      // Bright tint for all tiles
-      if (tileType === TILE_TYPES.WALL) {
-        sprite.tint = 0xaaaaaa; // lighter walls
+      // Add subtle detail based on type
+      if (tileType === TILE_TYPES.GRASS) {
+        // Grass tufts
+        g.lineStyle(1, 0x4a8b45, 0.3);
+        for (let i = 0; i < 3; i++) {
+          const gx = (Math.sin(x * 7 + y * 13 + i * 2) * 20);
+          const gy = (Math.cos(x * 11 + y * 7 + i * 3) * 10);
+          g.moveTo(gx, gy - 4);
+          g.lineTo(gx + 2, gy - 8);
+          g.moveTo(gx, gy - 4);
+          g.lineTo(gx - 2, gy - 7);
+        }
+      } else if (tileType === TILE_TYPES.STONE) {
+        // Stone cracks
+        g.lineStyle(1, 0x5a5a6a, 0.3);
+        g.moveTo(-15, -5);
+        g.lineTo(10, 5);
+        g.moveTo(-5, 8);
+        g.lineTo(15, -3);
       } else if (tileType === TILE_TYPES.RIFT_CRACK) {
-        sprite.tint = 0xbb99dd; // purple tint for rift
-      } else {
-        sprite.tint = 0xdddddd; // bright for all floor tiles
+        // Purple glow lines
+        g.lineStyle(1, 0x9a6abb, 0.4);
+        g.moveTo(-20, 0);
+        g.lineTo(0, -10);
+        g.lineTo(20, 0);
+        g.moveTo(0, -10);
+        g.lineTo(0, 10);
       }
 
       const pos = tileToScreen(x, y);
-      sprite.x = pos.x;
-      sprite.y = pos.y;
-      sprite.zIndex = pos.y;
+      g.x = pos.x;
+      g.y = pos.y;
+      g.zIndex = pos.y;
 
-      sprite.tileX = x;
-      sprite.tileY = y;
-      sprite.tileType = tileType;
+      g.tileX = x;
+      g.tileY = y;
+      g.tileType = tileType;
 
-      container.addChild(sprite);
+      container.addChild(g);
     }
   }
 
