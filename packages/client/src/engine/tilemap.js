@@ -40,12 +40,12 @@ export function renderTileMap(assets, grid, parent) {
       // Per-tile color variation
       const VARIATION = ((x * 13 + y * 29) % 20) - 10;
       const TILE_COLORS = {
-        [TILE_TYPES.GRASS]:      { fill: vary(0x3a6b35, VARIATION), border: 0x2a5a28 },
-        [TILE_TYPES.STONE]:      { fill: vary(0x6a6a7a, VARIATION), border: 0x5a5a6a },
-        [TILE_TYPES.DIRT]:       { fill: vary(0x7a6a4a, VARIATION), border: 0x6a5a3a },
-        [TILE_TYPES.RIFT_CRACK]: { fill: vary(0x6a4a8a, VARIATION), border: 0x5a3a7a },
-        [TILE_TYPES.WALL]:       { fill: vary(0x4a4a5a, VARIATION), border: 0x3a3a4a },
-        [TILE_TYPES.PORTAL]:     { fill: vary(0x4a3a8a, VARIATION), border: 0x6a4aaa },
+        [TILE_TYPES.GRASS]:      { fill: vary(0x4a8b45, VARIATION), border: 0x3a7a38 },
+        [TILE_TYPES.STONE]:      { fill: vary(0x7a7a8a, VARIATION), border: 0x6a6a7a },
+        [TILE_TYPES.DIRT]:       { fill: vary(0x8a7a5a, VARIATION), border: 0x7a6a4a },
+        [TILE_TYPES.RIFT_CRACK]: { fill: vary(0x7a5a9a, VARIATION), border: 0x6a4a8a },
+        [TILE_TYPES.WALL]:       { fill: vary(0x5a5a6a, VARIATION), border: 0x4a4a5a },
+        [TILE_TYPES.PORTAL]:     { fill: vary(0x5a4a9a, VARIATION), border: 0x7a5abb },
       };
 
       const colors = TILE_COLORS[tileType] || TILE_COLORS[TILE_TYPES.GRASS];
