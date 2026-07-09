@@ -21,7 +21,7 @@ const SHEETS = [
   ['chibiWalk',         'sheets/chibi/walk.png',          'atlases/chibi-walk.json'],
   ['chibiRun',          'sheets/chibi/run.png',           'atlases/chibi-run.json'],
   ['chibiAttack',       'sheets/chibi/attack.png',        'atlases/chibi-attack.json'],
-  // Flare RPG sprites (pixel art enemies)
+  // Flare RPG sprites (pixel art enemies — CC-BY 3.0)
   ['hero',              'sheets/male_light.png',          'atlases/male_light.json'],
   ['heroHeavy',         'sheets/male_heavy.png',          'atlases/male_heavy.json'],
   ['skeleton',          'sheets/skeleton.png',            'atlases/skeleton.json'],
@@ -32,13 +32,6 @@ const SHEETS = [
   ['elemental',         'sheets/elemental.png',           'atlases/elemental.json'],
   ['magician',          'sheets/magician.png',            'atlases/magician.json'],
   ['slime',             'sheets/slime.png',               'atlases/slime.json'],
-  // Original sheets (terrain, VFX only — items/weapons/UI use CSS now)
-  ['riftPortal',        'sheets/rift-portal.png',         'atlases/rift-portal.json'],
-  ['terrainGarden',     'sheets/terrain-garden.png',      'atlases/terrain-garden.json'],
-  ['terrainWalls',      'sheets/terrain-walls.png',       'atlases/terrain-walls.json'],
-  ['vfxSlash',          'sheets/vfx-slash.png',           'atlases/vfx-slash.json'],
-  ['vfxProjectiles',    'sheets/vfx-projectiles.png',     'atlases/vfx-projectiles.json'],
-  ['vfxAoe',            'sheets/vfx-aoe.png',             'atlases/vfx-aoe.json'],
 ];
 
 /**
