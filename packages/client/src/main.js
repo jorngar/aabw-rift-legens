@@ -318,6 +318,7 @@ async function initGame() {
               const drops = GOLD_DROPS[target.enemyType] || { min: 5, max: 15 };
               const gold = drops.min + Math.floor(Math.random() * (drops.max - drops.min));
               progressionSystem.addGold(gold);
+              inventorySystem.gold = progressionSystem.gold;
               progressionSystem.addKill(target.enemyType);
               progressionSystem.addXP(target.enemyType === 'riftKnight' ? 100 : 25, 'kill');
               if (target.sprite?.parent) target.sprite.parent.removeChild(target.sprite);
