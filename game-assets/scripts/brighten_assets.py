@@ -10,7 +10,7 @@ from pathlib import Path
 SHEETS = Path("/Volumes/Shinzo/Projects/aabw-hackathon/game-assets/sheets")
 
 
-def brighten_tile(src_path, brightness=1.8, contrast=1.3, saturation=1.2):
+def brighten_tile(src_path, brightness=2.5, contrast=1.5, saturation=1.4):
     """Brighten a tile sheet significantly."""
     img = Image.open(src_path).convert('RGBA')
     

@@ -43,15 +43,15 @@ export class LightingSystem {
    * @param {number} screenY - player screen Y (center of viewport)
    */
   update(screenX, screenY) {
-    // Softer vignette — let brightened tiles show
+    // Very subtle vignette — don't darken the game
     this.overlay.style.background = `
       radial-gradient(
-        ellipse 500px 400px at 50% 48%,
+        ellipse 600px 500px at 50% 48%,
         transparent 0%,
-        transparent 35%,
-        rgba(5, 3, 15, 0.1) 55%,
-        rgba(5, 3, 15, 0.3) 75%,
-        rgba(5, 3, 15, 0.6) 100%
+        transparent 50%,
+        rgba(5, 3, 15, 0.05) 70%,
+        rgba(5, 3, 15, 0.15) 90%,
+        rgba(5, 3, 15, 0.3) 100%
       )
     `;
   }

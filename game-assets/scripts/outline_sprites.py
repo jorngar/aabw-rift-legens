@@ -38,7 +38,7 @@ def add_outline(src_path, outline_width=2):
     result[outline, 0] = 255  # R
     result[outline, 1] = 255  # G
     result[outline, 2] = 255  # B
-    result[outline, 3] = 100  # A (semi-transparent white)
+    result[outline, 3] = 200  # A (mostly opaque white)
     
     Image.fromarray(result.astype(np.uint8)).save(src_path, optimize=True)
     print(f"  [+] Outlined: {src_path.name}")
