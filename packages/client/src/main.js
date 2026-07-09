@@ -285,6 +285,20 @@ async function initGame() {
     // Rift system update
     riftSystem.update(dt);
 
+    // Auto-target nearest enemy if no current target
+    if (!playerEntity.attackTarget) {
+      let nearest = null;
+      let minDist = Infinity;
+      for (const e of world.query('isEnemy', 'pos', 'stats')) {
+        if (e.stats.hp <= 0) continue;
+        const d = tileDistance(playerEntity.pos, e.pos);
+        if (d < minDist) { minDist = d; nearest = e; }
+      }
+      if (nearest && minDist < 6) {
+        playerEntity.attackTarget = nearest;
+      }
+    }
+
     // Player auto-attack target
     if (playerEntity.attackTarget) {
       const target = playerEntity.attackTarget;
