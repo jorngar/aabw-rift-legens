@@ -2,7 +2,7 @@
 // main.js — Entry point for Rift SEED Hackathon Demo
 // ============================================================
 import * as PIXI from 'pixi.js';
-import { loadRiftAssets } from '@assets/scripts/riftAssets.js';
+import { loadRiftAssets } from './riftAssets.js';
 import { Camera, tileToScreen, tileDistance } from './engine/isometric.js';
 import { renderTileMap, generateGardenMap } from './engine/tilemap.js';
 import { World, createEntity } from './engine/ecs.js';

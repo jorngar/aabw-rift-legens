@@ -3,3 +3,26 @@ dist/
 .vite/
 *.log
 .DS_Store
+
+# AI tool configs (local only)
+.commandcode/
+
+# Downloaded sprite source zips (not game assets)
+game-assets/new-sprites/
+
+# Old unused asset directories (replaced by procedural tiles + Flare/Chibi sprites)
+game-assets/characters/
+game-assets/enemies/
+game-assets/items/
+game-assets/weapons/
+game-assets/terrain/
+game-assets/ui/
+game-assets/vfx/
+
+# Python cache
+__pycache__/
+*.pyc
+
+# IDE
+.vscode/
+.idea/
