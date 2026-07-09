@@ -43,16 +43,13 @@ export class LightingSystem {
    * @param {number} screenY - player screen Y (center of viewport)
    */
   update(screenX, screenY) {
-    // Player light source — bright center, dark edges
+    // Subtle warm glow around player — NO darkening
     this.overlay.style.background = `
       radial-gradient(
-        ellipse 400px 300px at 50% 50%,
-        rgba(200, 210, 180, 0.08) 0%,
-        rgba(100, 110, 80, 0.03) 30%,
-        transparent 50%,
-        rgba(5, 3, 15, 0.15) 70%,
-        rgba(5, 3, 15, 0.35) 90%,
-        rgba(5, 3, 15, 0.5) 100%
+        ellipse 350px 250px at 50% 50%,
+        rgba(255, 240, 200, 0.06) 0%,
+        rgba(200, 180, 140, 0.03) 40%,
+        transparent 70%
       )
     `;
   }
