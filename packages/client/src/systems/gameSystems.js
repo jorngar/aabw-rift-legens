@@ -8,60 +8,29 @@ import { findPath, smoothPath } from '../engine/pathfinding.js';
 import { meleeAttack, combatTick } from '../engine/combat.js';
 
 /**
- * Movement system: moves entities toward their target tile.
+ * Movement system: simple direct movement toward target.
  */
 export function movementSystem(world, dt, emitEvent) {
-  for (const entity of world.query('pos', 'targetPos', 'stats')) {
-    if (!entity.targetPos) continue;
-    if (entity.pos.x === entity.targetPos.x && entity.pos.y === entity.targetPos.y) {
+  for (const entity of world.query('pos', 'stats')) {
+    if (!entity.targetPos) { entity.isMoving = false; continue; }
+
+    const dx = entity.targetPos.x - entity.pos.x;
+    const dy = entity.targetPos.y - entity.pos.y;
+    const dist = Math.sqrt(dx * dx + dy * dy);
+
+    if (dist < 0.3) {
+      entity.pos.x = entity.targetPos.x;
+      entity.pos.y = entity.targetPos.y;
       entity.targetPos = null;
       entity.isMoving = false;
       continue;
     }
 
-    // Follow path
-    if (entity.path && entity.path.length > 0) {
-      const next = entity.path[0];
-      const dx = next.x - entity.pos.x;
-      const dy = next.y - entity.pos.y;
-      const dist = Math.sqrt(dx * dx + dy * dy);
-      const speed = entity.stats.speed || 3;
-      const step = speed * dt;
-
-      if (dist <= step) {
-        const oldPos = { ...entity.pos };
-        entity.pos = { x: next.x, y: next.y };
-        entity.path.shift();
-
-        emitEvent(createEvent(EventType.MOVE_STOP, entity.id, {
-          fromX: oldPos.x, fromY: oldPos.y,
-          toX: entity.pos.x, toY: entity.pos.y,
-        }));
-      } else {
-        const oldPos = { ...entity.pos };
-        entity.pos.x += (dx / dist) * step;
-        entity.pos.y += (dy / dist) * step;
-        entity.direction = getDirection(dx, dy);
-        entity.isMoving = true;
-
-        if (Math.floor(oldPos.x) !== Math.floor(entity.pos.x) ||
-            Math.floor(oldPos.y) !== Math.floor(entity.pos.y)) {
-          emitEvent(createEvent(EventType.MOVE_START, entity.id, {
-            fromX: oldPos.x, fromY: oldPos.y,
-            toX: entity.pos.x, toY: entity.pos.y,
-            velocity: speed,
-            direction: entity.direction,
-          }));
-        }
-      }
-    } else {
-      // No path, calculate one
-      entity.path = smoothPath(findPath(world.grid, entity.pos, entity.targetPos));
-      if (entity.path.length === 0) {
-        entity.targetPos = null;
-        entity.isMoving = false;
-      }
-    }
+    const speed = (entity.stats?.speed || 2) * 0.03;
+    entity.pos.x += (dx / dist) * speed;
+    entity.pos.y += (dy / dist) * speed;
+    entity.direction = getDirection(dx, dy);
+    entity.isMoving = true;
   }
 }
 
@@ -109,11 +78,11 @@ export function enemyAISystem(world, dt, emitEvent) {
     if (entity.aiState === 'dead') continue;
 
     // State transitions
-    if (dist <= def.attackRange && entity.aiState !== 'attacking') {
+    if (dist <= def.attackRange) {
       entity.aiState = 'attacking';
-    } else if (dist <= def.aggroRange && entity.aiState !== 'chasing') {
+    } else if (dist <= def.aggroRange) {
       entity.aiState = 'chasing';
-    } else if (dist > def.aggroRange + 2) {
+    } else {
       entity.aiState = 'idle';
     }
 
