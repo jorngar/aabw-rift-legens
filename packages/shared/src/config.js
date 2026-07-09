@@ -31,7 +31,7 @@ export const PLAYER_DEFAULTS = Object.freeze({
 export const ENEMIES = Object.freeze({
   shadowBeast: {
     name: 'Shadow Beast',
-    hp: 40,
+    hp: 200,
     damage: 8,
     speed: 1.5,
     aggroRange: 4,
@@ -41,7 +41,7 @@ export const ENEMIES = Object.freeze({
   },
   riftKnight: {
     name: 'Rift Knight',
-    hp: 150,
+    hp: 500,
     damage: 20,
     speed: 1.0,
     aggroRange: 5,
