@@ -1,8 +1,9 @@
 // ============================================================
 // Enemy Health Bars — floating HP bars above enemies
 // ============================================================
+import { tileToScreen } from '../engine/isometric.js';
 
-const healthBars = new Map(); // entityId -> DOM element
+const healthBars = new Map();
 
 export function updateEnemyHealthBars(world, camera) {
   // Remove bars for dead/removed enemies
@@ -18,26 +19,25 @@ export function updateEnemyHealthBars(world, camera) {
   for (const entity of world.query('isEnemy', 'pos', 'stats')) {
     if (entity.stats.hp <= 0) continue;
 
-    const { tileToScreen } = require('./engine/isometric.js');
     const screen = tileToScreen(entity.pos.x, entity.pos.y);
     const sx = screen.x + camera.container.x;
-    const sy = screen.y + camera.container.y - 50;
+    const sy = screen.y + camera.container.y - 55;
 
     let bar = healthBars.get(entity.id);
     if (!bar) {
       bar = document.createElement('div');
       bar.style.cssText = 'position:fixed;pointer-events:none;z-index:60;';
       bar.innerHTML = `
-        <div style="width:40px;height:4px;background:rgba(0,0,0,0.6);border-radius:2px;overflow:hidden;">
-          <div class="hp-fill" style="width:100%;height:100%;background:#ff4444;border-radius:2px;transition:width 0.2s;"></div>
+        <div style="width:44px;height:5px;background:rgba(0,0,0,0.7);border-radius:3px;overflow:hidden;border:1px solid rgba(255,255,255,0.1);">
+          <div class="hp-fill" style="width:100%;height:100%;background:linear-gradient(180deg,#ff6644,#cc3322);border-radius:2px;transition:width 0.2s;"></div>
         </div>
-        <div style="font-size:8px;color:#fff;text-align:center;text-shadow:1px 1px 2px #000;margin-top:1px;">${entity.name || '?'}</div>
+        <div style="font-size:8px;color:#ddd;text-align:center;text-shadow:1px 1px 2px #000;margin-top:1px;font-family:monospace;">${entity.name || '?'}</div>
       `;
       document.body.appendChild(bar);
       healthBars.set(entity.id, bar);
     }
 
-    bar.style.left = `${sx - 20}px`;
+    bar.style.left = `${sx - 22}px`;
     bar.style.top = `${sy}px`;
 
     const hpPct = (entity.stats.hp / entity.stats.maxHp) * 100;
