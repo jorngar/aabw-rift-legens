@@ -3,9 +3,8 @@
 // ============================================================
 import { EventType, createEvent } from '@shared/events.js';
 import { ENEMIES } from '@shared/config.js';
+import { meleeAttack, combatTick, hasEffect } from '../engine/combat.js';
 import { tileDistance, getDirection, tileToScreen } from '../engine/isometric.js';
-import { findPath, smoothPath } from '../engine/pathfinding.js';
-import { meleeAttack, combatTick } from '../engine/combat.js';
 
 /**
  * Movement system: simple direct movement toward target.
@@ -54,13 +53,22 @@ export function spriteSyncSystem(world, dt) {
 
     // Facing direction: flip sprite based on movement direction
     if (entity.direction) {
-      // Mirror sprite for leftward movement
       if (entity.direction === 'W' || entity.direction === 'NW' || entity.direction === 'SW') {
         entity.sprite.scale.x = -Math.abs(entity.sprite.scale.x);
       } else if (entity.direction === 'E' || entity.direction === 'NE' || entity.direction === 'SE') {
         entity.sprite.scale.x = Math.abs(entity.sprite.scale.x);
       }
-      // For N/S, keep current facing
+    }
+
+    // Visual effect indicators
+    if (hasEffect(entity.id, 'slow')) {
+      entity.sprite.tint = 0x8888ff; // blue tint for slowed
+    } else if (hasEffect(entity.id, 'stun')) {
+      entity.sprite.tint = 0xffff00; // yellow tint for stunned
+    } else if (hasEffect(entity.id, 'dot')) {
+      entity.sprite.tint = 0x88ff88; // green tint for poisoned
+    } else if (entity.isPlayer) {
+      entity.sprite.tint = 0xffffff; // normal
     }
   }
 }
@@ -81,6 +89,13 @@ export function enemyAISystem(world, dt, emitEvent) {
     combatTick(entity, dt);
 
     if (entity.aiState === 'dead') continue;
+
+    // Stun check — skip all AI if stunned
+    if (hasEffect(entity.id, 'stun')) {
+      entity.aiState = 'stunned';
+      entity.targetPos = null;
+      continue;
+    }
 
     // State transitions
     if (dist <= def.attackRange) {

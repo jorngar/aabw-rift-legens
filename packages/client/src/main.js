@@ -252,7 +252,7 @@ async function initGame(classId = 'warrior') {
     emitEvent,
     skillKeys: classSkills,
     useSkillFn: (attacker, skillId, target, targetPos, emit) => {
-      const result = useSkill(attacker, skillId, target, targetPos, emit);
+      const result = useSkill(attacker, skillId, target, targetPos, emit, world);
       if (result.success) {
         progressionSystem.addSkillUse();
         const ps = tileToScreen(playerEntity.pos.x, playerEntity.pos.y);
