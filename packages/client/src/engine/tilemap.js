@@ -29,35 +29,35 @@ export function renderTileMap(assets, grid, parent) {
   const rows = grid.length;
   const cols = grid[0].length;
 
-  // Color palette — multiple shades per tile type for variety
+  // Color palette — clearly distinct colors per type
   const PALETTES = {
     [TILE_TYPES.GRASS]: [
-      { fill: 0x4a8b45, border: 0x3a7a38 },
-      { fill: 0x3d7d3a, border: 0x2d6d2a },
-      { fill: 0x559a50, border: 0x458a40 },
-      { fill: 0x4e8f48, border: 0x3e7f38 },
-      { fill: 0x42833e, border: 0x32732e },
+      { fill: 0x4a9b48, border: 0x3a8a38 },
+      { fill: 0x3d8d3a, border: 0x2d7d2a },
+      { fill: 0x55aa52, border: 0x459a42 },
+      { fill: 0x4e9f4a, border: 0x3e8f3a },
+      { fill: 0x429340, border: 0x328330 },
     ],
     [TILE_TYPES.STONE]: [
-      { fill: 0x7a7a8a, border: 0x6a6a7a },
-      { fill: 0x6e6e7e, border: 0x5e5e6e },
-      { fill: 0x868696, border: 0x767686 },
-      { fill: 0x727282, border: 0x626272 },
+      { fill: 0x8a8a9e, border: 0x7a7a8e },
+      { fill: 0x7e7e92, border: 0x6e6e82 },
+      { fill: 0x9696aa, border: 0x86869a },
+      { fill: 0x727286, border: 0x626276 },
     ],
     [TILE_TYPES.DIRT]: [
-      { fill: 0x8a7a5a, border: 0x7a6a4a },
-      { fill: 0x7e6e4e, border: 0x6e5e3e },
-      { fill: 0x968666, border: 0x867656 },
-      { fill: 0x847450, border: 0x746440 },
+      { fill: 0x9a8a60, border: 0x8a7a50 },
+      { fill: 0x8e7e54, border: 0x7e6e44 },
+      { fill: 0xa69670, border: 0x968660 },
+      { fill: 0x948456, border: 0x847446 },
     ],
     [TILE_TYPES.RIFT_CRACK]: [
-      { fill: 0x7a5a9a, border: 0x6a4a8a },
       { fill: 0x8a6aaa, border: 0x7a5a9a },
-      { fill: 0x6a4a8a, border: 0x5a3a7a },
+      { fill: 0x9a7aba, border: 0x8a6aaa },
+      { fill: 0x7a5a9a, border: 0x6a4a8a },
     ],
     [TILE_TYPES.WALL]: [
-      { fill: 0x5a5a6a, border: 0x4a4a5a },
-      { fill: 0x4e4e5e, border: 0x3e3e4e },
+      { fill: 0x5a5a70, border: 0x4a4a60 },
+      { fill: 0x4e4e64, border: 0x3e3e54 },
     ],
   };
 
@@ -76,9 +76,9 @@ export function renderTileMap(assets, grid, parent) {
       const hw = 64;
       const hh = 32;
 
-      // Main diamond fill
+      // Main diamond fill with stronger borders
       g.beginFill(colors.fill);
-      g.lineStyle(1, colors.border, 0.6);
+      g.lineStyle(1.5, colors.border, 0.8);
       g.moveTo(0, -hh);
       g.lineTo(hw, 0);
       g.lineTo(0, hh);
@@ -86,13 +86,14 @@ export function renderTileMap(assets, grid, parent) {
       g.closePath();
       g.endFill();
 
-      // Add subtle inner highlight for depth
-      const highlightAlpha = 0.08 + seededRandom(x, y, 7) * 0.06;
-      g.beginFill(0xffffff, highlightAlpha);
-      g.moveTo(0, -hh + 4);
-      g.lineTo(hw - 8, 0);
-      g.lineTo(0, hh - 4);
-      g.lineTo(-hw + 8, 0);
+      // Top face highlight (makes tiles look 3D)
+      const lighterFill = vary(colors.fill, 15);
+      g.beginFill(lighterFill, 0.25);
+      g.lineStyle(0);
+      g.moveTo(0, -hh);
+      g.lineTo(hw, 0);
+      g.lineTo(0, -hh + 6);
+      g.lineTo(-hw, 0);
       g.closePath();
       g.endFill();
 

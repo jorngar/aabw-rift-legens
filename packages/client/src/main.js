@@ -326,7 +326,7 @@ async function initGame() {
     // Rift system update
     riftSystem.update(dt);
 
-    // Auto-target nearest enemy if no current target
+    // Auto-target nearest enemy ONLY for attack (don't move toward them)
     if (!playerEntity.attackTarget) {
       let nearest = null;
       let minDist = Infinity;
@@ -335,12 +335,13 @@ async function initGame() {
         const d = tileDistance(playerEntity.pos, e.pos);
         if (d < minDist) { minDist = d; nearest = e; }
       }
-      if (nearest && minDist < 6) {
+      // Only auto-target if enemy is RIGHT next to player (1.5 tiles)
+      if (nearest && minDist < 1.5) {
         playerEntity.attackTarget = nearest;
       }
     }
 
-    // Player auto-attack target
+    // Player attack target — only attack if in range, don't auto-walk
     if (playerEntity.attackTarget) {
       const target = playerEntity.attackTarget;
       if (target.stats.hp > 0) {
@@ -368,8 +369,10 @@ async function initGame() {
               world.removeEntity(target.id);
             }
           }
-        } else {
-          playerEntity.targetPos = { x: Math.round(target.pos.x), y: Math.round(target.pos.y) };
+        }
+        // If out of range, don't auto-walk — just clear target
+        else if (dist > playerEntity.attackRange + 1) {
+          playerEntity.attackTarget = null;
         }
       } else {
         playerEntity.attackTarget = null;

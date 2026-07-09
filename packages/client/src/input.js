@@ -1,47 +1,44 @@
 // ============================================================
-// Input Handler — keyboard + mouse for isometric RPG
+// Input Handler — fixed: arrow keys = move, Q/E/R/T = skills
 // ============================================================
 import { screenToTile } from './engine/isometric.js';
 import { SKILLS } from '@shared/config.js';
 
-/**
- * Sets up keyboard and mouse input for the game.
- * @param {Object} opts
- * @param {HTMLCanvasElement} opts.canvas
- * @param {Object} opts.camera
- * @param {Object} opts.player
- * @param {Object} opts.world
- * @param {Function} opts.emitEvent
- * @param {Function} opts.useSkill
- */
 export function setupInput({ canvas, camera, player, world, emitEvent, useSkillFn }) {
   const keys = new Set();
 
-  // Skill key map
+  // Skills: Q, E, R, T (NOT W/A/S/D — those are movement)
   const skillKeys = {
     'q': 'shadowStrike',
-    'w': 'riftSlash',
-    'e': 'heal',
-    'r': 'riftTeleport',
+    'e': 'riftSlash',
+    'r': 'heal',
+    't': 'riftTeleport',
   };
+
+  // Track skill cooldowns
+  const cooldowns = {};
 
   window.addEventListener('keydown', (e) => {
     const key = e.key.toLowerCase();
     keys.add(key);
 
-    // Skill usage
+    // Skill usage — only on keydown, respect cooldowns
     if (skillKeys[key] && player) {
+      const skillId = skillKeys[key];
+      const now = Date.now();
+      if (cooldowns[skillId] && now < cooldowns[skillId]) return; // on cooldown
+
       const nearestEnemy = findNearestEnemy(player, world);
-      const result = useSkillFn(player, skillKeys[key], nearestEnemy, nearestEnemy?.pos, emitEvent);
+      const result = useSkillFn(player, skillId, nearestEnemy, nearestEnemy?.pos, emitEvent);
       if (result.success) {
-        updateSkillUI(key, SKILLS[skillKeys[key]].cooldownMs);
+        const skill = SKILLS[skillId];
+        cooldowns[skillId] = now + (skill?.cooldownMs || 3000);
+        updateSkillUI(key, skill?.cooldownMs || 3000);
       }
     }
 
-    // Tab to toggle agent panel
     if (key === 'tab') {
       e.preventDefault();
-      document.getElementById('agent-panel')?.classList.toggle('visible');
     }
   });
 
@@ -49,7 +46,7 @@ export function setupInput({ canvas, camera, player, world, emitEvent, useSkillF
     keys.delete(e.key.toLowerCase());
   });
 
-  // Mouse click: move player or attack
+  // Click to move or attack
   canvas.addEventListener('click', (e) => {
     if (!player || !camera) return;
 
@@ -63,11 +60,16 @@ export function setupInput({ canvas, camera, player, world, emitEvent, useSkillF
     const ty = Math.round(tilePos.y);
 
     // Check if clicking on an enemy
-    const clickedEnemy = world.query('isEnemy', 'pos').find(enemy => {
-      return Math.abs(Math.round(enemy.pos.x) - tx) <= 0 &&
-             Math.abs(Math.round(enemy.pos.y) - ty) <= 0 &&
-             enemy.stats.hp > 0;
-    });
+    let clickedEnemy = null;
+    for (const enemy of world.query('isEnemy', 'pos', 'stats')) {
+      if (enemy.stats.hp <= 0) continue;
+      const dx = Math.abs(Math.round(enemy.pos.x) - tx);
+      const dy = Math.abs(Math.round(enemy.pos.y) - ty);
+      if (dx <= 1 && dy <= 1) {
+        clickedEnemy = enemy;
+        break;
+      }
+    }
 
     if (clickedEnemy) {
       player.targetPos = { x: clickedEnemy.pos.x, y: clickedEnemy.pos.y };
@@ -78,7 +80,7 @@ export function setupInput({ canvas, camera, player, world, emitEvent, useSkillF
     }
   });
 
-  // Continuous movement from WASD
+  // Movement: WASD only (no arrow keys to avoid scroll)
   function getMovementInput() {
     let dx = 0, dy = 0;
     if (keys.has('w') || keys.has('arrowup'))    dy -= 1;
@@ -102,20 +104,22 @@ function findNearestEnemy(player, world) {
       nearest = enemy;
     }
   }
-  return nearest;
+  // Only return if in skill range (3 tiles)
+  return minDist <= 3 ? nearest : null;
 }
 
 function updateSkillUI(key, cooldownMs) {
   const slot = document.getElementById(`skill-${key}`);
   if (!slot) return;
-  const overlay = slot.querySelector('.cooldown-overlay') || (() => {
-    const div = document.createElement('div');
-    div.className = 'cooldown-overlay';
-    slot.appendChild(div);
-    return div;
-  })();
-  overlay.style.height = '100%';
-  overlay.style.transition = `height ${cooldownMs}ms linear`;
+
+  // Remove old overlay
+  const old = slot.querySelector('.cooldown-overlay');
+  if (old) old.remove();
+
+  const overlay = document.createElement('div');
+  overlay.className = 'cooldown-overlay';
+  overlay.style.cssText = `position:absolute;bottom:0;left:0;right:0;background:rgba(0,0,0,0.7);height:100%;transition:height ${cooldownMs}ms linear;border-radius:0 0 6px 6px;pointer-events:none;`;
+  slot.appendChild(overlay);
   requestAnimationFrame(() => {
     overlay.style.height = '0%';
   });
