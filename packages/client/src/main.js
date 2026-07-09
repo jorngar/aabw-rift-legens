@@ -85,11 +85,11 @@ async function initGame() {
   camera.container.x = app.screen.width / 2 - startScreen.x;
   camera.container.y = app.screen.height / 2 - startScreen.y;
 
-  // ---- Create Player ----
-  const heroSheet = assets.sheets.hero;
-  const playerSprite = assets.anim('hero', 'frame_', 8, true);
-  playerSprite.anchor.set(0.5, 0.8);
-  playerSprite.scale.set(0.55);
+  // ---- Create Player (anime chibi style) ----
+  const chibiSheet = assets.sheets.chibiRun;
+  const playerSprite = assets.anim('chibiRun', 'frame_', 10, true);
+  playerSprite.anchor.set(0.5, 0.85);
+  playerSprite.scale.set(0.12); // chibi frames are ~400px, scale to ~48px
   playerSprite.tint = 0xffffff;
 
   // Add subtle glow behind player for visibility
@@ -124,8 +124,8 @@ async function initGame() {
     },
     skillCooldowns: {},
     sprite: playerSprite,
-    walkAnim: Object.values(heroSheet.textures).sort(),
-    idleAnim: Object.values(heroSheet.textures).sort().slice(0, 8),
+    walkAnim: Object.values(chibiSheet.textures).sort(),
+    idleAnim: Object.values(assets.sheets.chibiIdle.textures).sort().slice(0, 5),
   });
   world.addEntity(playerEntity);
   camera.container.addChild(playerSprite);

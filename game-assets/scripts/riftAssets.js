@@ -16,7 +16,12 @@ const ASSET_BASE = ''; // Vite serves publicDir contents at root
 
 // Each entry: [key, sheetFilename, atlasFilename]
 const SHEETS = [
-  // Flare RPG sprites (real pixel art, transparent backgrounds)
+  // Anime chibi sprites (CC0, real manga style)
+  ['chibiIdle',         'sheets/chibi/idle.png',          'atlases/chibi-idle.json'],
+  ['chibiWalk',         'sheets/chibi/walk.png',          'atlases/chibi-walk.json'],
+  ['chibiRun',          'sheets/chibi/run.png',           'atlases/chibi-run.json'],
+  ['chibiAttack',       'sheets/chibi/attack.png',        'atlases/chibi-attack.json'],
+  // Flare RPG sprites (pixel art enemies)
   ['hero',              'sheets/male_light.png',          'atlases/male_light.json'],
   ['heroHeavy',         'sheets/male_heavy.png',          'atlases/male_heavy.json'],
   ['skeleton',          'sheets/skeleton.png',            'atlases/skeleton.json'],
