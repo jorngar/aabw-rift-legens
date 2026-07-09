@@ -153,7 +153,7 @@ async function initGame(classId = 'warrior') {
     },
     skillCooldowns: {},
     sprite: playerSprite,
-    walkAnim: Object.values(chibiSheet.textures).sort(),
+    walkAnim: Object.values(assets.sheets[spriteKey].textures).sort(),
     idleAnim: Object.values(assets.sheets.chibiIdle.textures).sort().slice(0, 5),
   });
   world.addEntity(playerEntity);
