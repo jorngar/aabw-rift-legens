@@ -59,20 +59,9 @@ export function renderTileMap(assets, grid, parent) {
       const texH = texture.height;
       sprite.scale.set(128 / texW, 64 / texH);
 
-      // Brighten tiles for visibility
-      if (tileType === TILE_TYPES.GRASS) {
-        sprite.tint = 0x4a6a3a; // green tint
-      } else if (tileType === TILE_TYPES.STONE) {
-        sprite.tint = 0x8a8a9a; // light grey
-      } else if (tileType === TILE_TYPES.DIRT) {
-        sprite.tint = 0x7a6a4a; // brown
-      } else if (tileType === TILE_TYPES.RIFT_CRACK) {
-        sprite.tint = 0x6a4a8a; // purple tint
-      } else if (tileType === TILE_TYPES.WALL) {
-        sprite.tint = 0x5a5a6a; // dark grey
-      } else {
-        sprite.tint = 0x9a9aaa; // default light
-      }
+      // Light tint for variety (tiles are already brightened)
+      const tintVariants = [0xffffff, 0xf0f0f0, 0xe8e8e8, 0xf5f5f0];
+      sprite.tint = tintVariants[(x + y) % tintVariants.length];
 
       const pos = tileToScreen(x, y);
       sprite.x = pos.x;

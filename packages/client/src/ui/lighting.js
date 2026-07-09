@@ -43,16 +43,15 @@ export class LightingSystem {
    * @param {number} screenY - player screen Y (center of viewport)
    */
   update(screenX, screenY) {
-    // The player is always centered (camera follows), so light is always at center
+    // Softer vignette — let brightened tiles show
     this.overlay.style.background = `
       radial-gradient(
-        ellipse 450px 350px at 50% 48%,
+        ellipse 500px 400px at 50% 48%,
         transparent 0%,
-        transparent 25%,
-        rgba(5, 3, 15, 0.15) 45%,
-        rgba(5, 3, 15, 0.4) 65%,
-        rgba(5, 3, 15, 0.7) 85%,
-        rgba(5, 3, 15, 0.9) 100%
+        transparent 35%,
+        rgba(5, 3, 15, 0.1) 55%,
+        rgba(5, 3, 15, 0.3) 75%,
+        rgba(5, 3, 15, 0.6) 100%
       )
     `;
   }

@@ -36,7 +36,7 @@ async function initGame() {
   const container = document.getElementById('game-container');
 
   const app = new PIXI.Application({
-    background: '#0d0a1a',
+    background: '#1a1525',
     antialias: true,
     resizeTo: container,
     width: CLIENT.CANVAS_WIDTH,
