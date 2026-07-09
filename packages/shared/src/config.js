@@ -16,10 +16,10 @@ export const TILE = Object.freeze({
 
 /** Player starting stats */
 export const PLAYER_DEFAULTS = Object.freeze({
-  hp: 250,
-  maxHp: 250,
-  mp: 80,
-  maxMp: 80,
+  hp: 500,
+  maxHp: 500,
+  mp: 100,
+  maxMp: 100,
   speed: 3,
   attackDamage: 30,
   attackCooldownMs: 600,
