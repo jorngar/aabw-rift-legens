@@ -9,6 +9,7 @@ import { SERVER } from '@rift-seed/shared/config';
 import { TelemetryAgent } from './agents/telemetry-agent.js';
 import { ABTestingAgent } from './agents/ab-testing-agent.js';
 import { DataCleaningAgent } from './agents/data-cleaning-agent.js';
+import { getBalance, setBalance, getAllBalance, getMatchHistory, getAdjustments, getClasses, getClass, getAggregateStats, recordMatch, initDB } from './database.js';
 
 const app = express();
 app.use(cors());
@@ -126,9 +127,65 @@ app.get('/api/agents/status', (req, res) => {
   });
 });
 
+// ---- Database API ----
+app.get('/api/balance', (req, res) => {
+  const category = req.query.category;
+  res.json(getAllBalance(category));
+});
+
+app.get('/api/balance/:key', (req, res) => {
+  const value = getBalance(req.params.key);
+  res.json({ key: req.params.key, value });
+});
+
+app.post('/api/balance/:key', (req, res) => {
+  const { value, reason } = req.body;
+  setBalance(req.params.key, value, reason || 'manual', 'api');
+  res.json({ key: req.params.key, value, updated: true });
+});
+
+app.get('/api/matches', (req, res) => {
+  const limit = parseInt(req.query.limit) || 50;
+  res.json(getMatchHistory(limit));
+});
+
+app.post('/api/matches', (req, res) => {
+  recordMatch(req.body);
+  res.json({ recorded: true });
+});
+
+app.get('/api/adjustments', (req, res) => {
+  const limit = parseInt(req.query.limit) || 20;
+  res.json(getAdjustments(limit));
+});
+
+app.get('/api/classes', (req, res) => {
+  res.json(getClasses());
+});
+
+app.get('/api/classes/:id', (req, res) => {
+  const cls = getClass(req.params.id);
+  if (cls) res.json(cls);
+  else res.status(404).json({ error: 'Class not found' });
+});
+
+app.get('/api/stats', (req, res) => {
+  res.json(getAggregateStats());
+});
+
 // ---- Start ----
-httpServer.listen(SERVER.PORT, () => {
-  console.log(`[RiftSEED Server] Running on http://localhost:${SERVER.PORT}`);
-  console.log(`[RiftSEED Server] WebSocket on ws://localhost:${SERVER.PORT}/ws`);
-  console.log(`[RiftSEED Server] Agents: Telemetry, A/B Testing, Data Cleaning`);
+async function start() {
+  await initDB();
+  httpServer.listen(SERVER.PORT, () => {
+    console.log(`[RiftSEED Server] Running on http://localhost:${SERVER.PORT}`);
+    console.log(`[RiftSEED Server] WebSocket on ws://localhost:${SERVER.PORT}/ws`);
+    console.log(`[RiftSEED Server] Agents: Telemetry, A/B Testing, Data Cleaning`);
+    console.log(`[RiftSEED Server] Database: SQLite (game.db)`);
+    console.log(`[RiftSEED Server] Classes: ${getClasses().map(c => c.name).join(', ')}`);
+  });
+}
+
+start().catch(err => {
+  console.error('[RiftSEED Server] Failed to start:', err);
+  process.exit(1);
 });

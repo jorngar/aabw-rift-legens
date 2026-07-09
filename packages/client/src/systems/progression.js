@@ -1,7 +1,7 @@
 // ============================================================
 // Progression System — XP, leveling, SEED rank
 // ============================================================
-import { RANKS, LEVEL_BONUS } from '@shared/config.js';
+import { RANKS, LEVEL_BONUS, SKILL_SCALING, SKILLS } from '@shared/config.js';
 import { EventType, createEvent } from '@shared/events.js';
 
 export class ProgressionSystem {
@@ -60,6 +60,11 @@ export class ProgressionSystem {
       this.player.stats.maxMp += LEVEL_BONUS.maxMp;
       this.player.stats.mp = this.player.stats.maxMp;
       this.player.stats.damage += LEVEL_BONUS.damage;
+      if (LEVEL_BONUS.speed) this.player.stats.speed = (this.player.stats.speed || 3) + LEVEL_BONUS.speed;
+      if (LEVEL_BONUS.attackRange) this.player.attackRange = (this.player.attackRange || 2) + LEVEL_BONUS.attackRange;
+
+      // Scale skills with level
+      this._scaleSkills(newLevel);
 
       this.emitEvent(createEvent(EventType.RESPAWN, this.player.id, { level: newLevel, xp: this.xp }));
     }
@@ -82,6 +87,26 @@ export class ProgressionSystem {
 
   getRankInfo() {
     return RANKS[this.rank] || RANKS.D;
+  }
+
+  _scaleSkills(level) {
+    // Scale skill damage/healing based on level
+    for (const [skillId, scaling] of Object.entries(SKILL_SCALING)) {
+      const skill = SKILLS[skillId];
+      if (!skill) continue;
+      if (scaling.damagePerLevel && skill.damage !== undefined) {
+        skill.damage += scaling.damagePerLevel;
+      }
+      if (scaling.healPerLevel && skill.healAmount !== undefined) {
+        skill.healAmount += scaling.healPerLevel;
+      }
+      if (scaling.manaReduction && skill.manaCost !== undefined) {
+        skill.manaCost = Math.max(5, skill.manaCost - scaling.manaReduction);
+      }
+      if (scaling.rangePerLevel && skill.range !== undefined) {
+        skill.range += scaling.rangePerLevel;
+      }
+    }
   }
 
   trackEvent(event) {

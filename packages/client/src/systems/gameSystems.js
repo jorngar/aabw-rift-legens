@@ -35,8 +35,7 @@ export function movementSystem(world, dt, emitEvent) {
 }
 
 /**
- * Sprite sync system: updates PixiJS sprite positions from entity positions.
- * Includes idle bobbing animation.
+ * Sprite sync system: updates positions, facing direction, idle bobbing.
  */
 export function spriteSyncSystem(world, dt) {
   const time = Date.now() / 1000;
@@ -51,6 +50,17 @@ export function spriteSyncSystem(world, dt) {
       entity.sprite.y = screenPos.y + Math.sin(time * bobSpeed + entity.id) * bobAmount;
     } else {
       entity.sprite.y = screenPos.y;
+    }
+
+    // Facing direction: flip sprite based on movement direction
+    if (entity.direction) {
+      // Mirror sprite for leftward movement
+      if (entity.direction === 'W' || entity.direction === 'NW' || entity.direction === 'SW') {
+        entity.sprite.scale.x = -Math.abs(entity.sprite.scale.x);
+      } else if (entity.direction === 'E' || entity.direction === 'NE' || entity.direction === 'SE') {
+        entity.sprite.scale.x = Math.abs(entity.sprite.scale.x);
+      }
+      // For N/S, keep current facing
     }
   }
 }

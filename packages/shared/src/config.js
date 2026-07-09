@@ -111,8 +111,22 @@ export const RANKS = Object.freeze({
   S: { name: 'S', title: 'Shadow Lord', level: 5, xp: 1000, color: '#e8ff47' },
 });
 
-/** Level stat bonuses */
-export const LEVEL_BONUS = Object.freeze({ maxHp: 10, maxMp: 5, damage: 3 });
+/** Level stat bonuses — scale per level */
+export const LEVEL_BONUS = Object.freeze({
+  maxHp: 15,
+  maxMp: 8,
+  damage: 4,
+  speed: 0.1,
+  attackRange: 0.1,
+});
+
+/** Skill scaling per level */
+export const SKILL_SCALING = Object.freeze({
+  shadowStrike: { damagePerLevel: 8, manaReduction: 1 },
+  riftSlash: { damagePerLevel: 5, manaReduction: 1 },
+  heal: { healPerLevel: 6, manaReduction: 1 },
+  riftTeleport: { rangePerLevel: 0.5, manaReduction: 2 },
+});
 
 /** Missions */
 export const MISSIONS = Object.freeze([
