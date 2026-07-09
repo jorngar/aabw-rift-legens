@@ -1,31 +1,30 @@
 // ============================================================
 // Isometric Coordinate System & Camera
 // ============================================================
+import * as PIXI from 'pixi.js';
 import { TILE } from '@shared/config.js';
+
+// Tile dimensions for isometric projection (2:1 ratio)
+const ISO_W = 128; // full tile width in pixels
+const ISO_H = 64;  // half tile height for proper iso ratio
 
 /**
  * Convert tile coordinates to screen (pixel) coordinates.
- * Standard isometric projection: diamond grid.
- * @param {number} tileX
- * @param {number} tileY
- * @returns {{x: number, y: number}}
+ * Standard isometric projection: 2:1 diamond grid.
  */
 export function tileToScreen(tileX, tileY) {
   return {
-    x: (tileX - tileY) * (TILE.RENDER_W / 2),
-    y: (tileX + tileY) * (TILE.RENDER_H / 4),
+    x: (tileX - tileY) * (ISO_W / 2),
+    y: (tileX + tileY) * (ISO_H / 2),
   };
 }
 
 /**
  * Convert screen coordinates back to tile coordinates.
- * @param {number} screenX
- * @param {number} screenY
- * @returns {{x: number, y: number}}
  */
 export function screenToTile(screenX, screenY) {
-  const halfW = TILE.RENDER_W / 2;
-  const halfH = TILE.RENDER_H / 4;
+  const halfW = ISO_W / 2;
+  const halfH = ISO_H / 2;
   return {
     x: (screenX / halfW + screenY / halfH) / 2,
     y: (screenY / halfH - screenX / halfW) / 2,
@@ -33,20 +32,14 @@ export function screenToTile(screenX, screenY) {
 }
 
 /**
- * Calculate Manhattan distance between two tile positions.
- * @param {{x: number, y: number}} a
- * @param {{x: number, y: number}} b
- * @returns {number}
+ * Manhattan distance between two tile positions.
  */
 export function tileDistance(a, b) {
   return Math.abs(a.x - b.x) + Math.abs(a.y - b.y);
 }
 
 /**
- * Get the isometric direction string from a movement delta.
- * @param {number} dx
- * @param {number} dy
- * @returns {string} one of: S, SE, E, NE, N, NW, W, SW
+ * Get isometric direction from movement delta.
  */
 export function getDirection(dx, dy) {
   if (dx === 0 && dy === 0) return 'S';
@@ -68,6 +61,7 @@ export function getDirection(dx, dy) {
 export class Camera {
   constructor(app) {
     this.container = new PIXI.Container();
+    this.container.sortableChildren = true;
     this.targetX = 0;
     this.targetY = 0;
     this.followSpeed = 0.1;
@@ -75,19 +69,11 @@ export class Camera {
     this.screenH = app.screen.height;
   }
 
-  /**
-   * Set the camera to follow a world position.
-   * @param {number} worldX
-   * @param {number} worldY
-   */
   follow(worldX, worldY) {
     this.targetX = worldX;
     this.targetY = worldY;
   }
 
-  /**
-   * Update camera position (call each frame).
-   */
   update() {
     const offsetX = this.screenW / 2 - this.targetX;
     const offsetY = this.screenH / 2 - this.targetY;
@@ -95,12 +81,6 @@ export class Camera {
     this.container.y += (offsetY - this.container.y) * this.followSpeed;
   }
 
-  /**
-   * Convert screen coords to world coords.
-   * @param {number} sx
-   * @param {number} sy
-   * @returns {{x: number, y: number}}
-   */
   screenToWorld(sx, sy) {
     return {
       x: sx - this.container.x,
@@ -108,6 +88,3 @@ export class Camera {
     };
   }
 }
-
-// Need PIXI for Camera
-import * as PIXI from 'pixi.js';

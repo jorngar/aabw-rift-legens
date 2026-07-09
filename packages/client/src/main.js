@@ -78,7 +78,7 @@ async function initGame() {
   const cadetSheet = assets.sheets.seedCadetWalk;
   const playerSprite = assets.anim('seedCadetWalk', 'frame_', 10, true);
   playerSprite.anchor.set(0.5, 0.8);
-  playerSprite.scale.set(0.5);
+  playerSprite.scale.set(0.28);
 
   const playerEntity = createEntity({
     isPlayer: true,
@@ -129,7 +129,7 @@ async function initGame() {
   // ---- Shop Merchant NPC ----
   const merchantSprite = assets.anim('riftMageWalk', 'frame_', 6, true);
   merchantSprite.anchor.set(0.5, 0.8);
-  merchantSprite.scale.set(0.45);
+  merchantSprite.scale.set(0.25);
   const merchantPos = { x: 4, y: 6 };
   const mScreen = tileToScreen(merchantPos.x, merchantPos.y);
   merchantSprite.x = mScreen.x;
@@ -142,7 +142,7 @@ async function initGame() {
     const sheetKey = type === 'shadowBeast' ? 'shadowBeast' : 'riftKnight';
     const sprite = assets.anim(sheetKey, 'frame_', 8, true);
     sprite.anchor.set(0.5, 0.8);
-    sprite.scale.set(0.45);
+    sprite.scale.set(0.25);
 
     const entity = createEntity({
       isEnemy: true, enemyType: type, name: def.name,
@@ -171,7 +171,7 @@ async function initGame() {
   // ---- Portal Sprite ----
   const portalSprite = assets.anim('riftPortal', 'frame_', 8, true);
   portalSprite.anchor.set(0.5, 0.5);
-  portalSprite.scale.set(0.35);
+  portalSprite.scale.set(0.2);
   const portalScreen = tileToScreen(8, 3);
   portalSprite.x = portalScreen.x;
   portalSprite.y = portalScreen.y;
@@ -233,7 +233,7 @@ async function initGame() {
     const hpPct = (playerEntity.stats.hp / playerEntity.stats.maxHp) * 100;
     const mpPct = (playerEntity.stats.mp / playerEntity.stats.maxMp) * 100;
     const xpProgress = progressionSystem.getProgress();
-    const xpPct = xpProgress.pct * 100;
+    const xpPct = (xpProgress.pct || 0) * 100;
 
     const hpFill = document.getElementById('hp-fill');
     const mpFill = document.getElementById('mp-fill');
@@ -241,6 +241,41 @@ async function initGame() {
     if (hpFill) hpFill.style.width = `${hpPct * 2}px`;
     if (mpFill) mpFill.style.width = `${mpPct * 1.5}px`;
     if (xpFill) xpFill.style.width = `${xpPct}px`;
+
+    // Rank + Level
+    const rankEl = document.getElementById('rank-display');
+    if (rankEl) rankEl.textContent = `Rank: ${progressionSystem.rank}`;
+    const levelEl = document.getElementById('level-display');
+    if (levelEl) levelEl.textContent = `Lv.${progressionSystem.level}`;
+
+    // Gold
+    const goldEl = document.getElementById('gold-display');
+    if (goldEl) goldEl.textContent = `⬡ ${inventorySystem.gold}g`;
+
+    // Item hotbar
+    const hpQty = document.getElementById('hp-qty');
+    const mpQty = document.getElementById('mp-qty');
+    const shardQty = document.getElementById('shard-qty');
+    if (hpQty) hpQty.textContent = inventorySystem.getCount('health_potion');
+    if (mpQty) mpQty.textContent = inventorySystem.getCount('mana_potion');
+    if (shardQty) shardQty.textContent = inventorySystem.getCount('rift_shard');
+
+    // Missions
+    const missionsEl = document.getElementById('missions');
+    if (missionsEl) {
+      const killCount = progressionSystem.kills;
+      const skillCount = progressionSystem.skillsUsed;
+      const rankOrder = {D:0,C:1,B:2,A:3,S:4};
+      const missions = [
+        { desc: 'Clear Rift Tier 1', done: progressionSystem.riftsCleared > 0 },
+        { desc: 'Defeat 10 Enemies', done: killCount >= 10, progress: `${killCount}/10` },
+        { desc: 'Reach Rank C', done: (rankOrder[progressionSystem.rank]||0) >= 1 },
+        { desc: 'Use 5 Skills', done: skillCount >= 5, progress: `${skillCount}/5` },
+      ];
+      missionsEl.innerHTML = missions.map(m =>
+        `<div class="mission-item${m.done ? ' complete' : ''}">${m.done ? '✓' : '○'} ${m.desc}${m.progress ? ' ('+m.progress+')' : ''}</div>`
+      ).join('');
+    }
   }
 
   // ---- Game Loop ----
