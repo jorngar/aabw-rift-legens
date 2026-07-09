@@ -24,20 +24,29 @@ export function renderTileMap(assets, grid, parent) {
   const rows = grid.length;
   const cols = grid[0].length;
 
-  // Tile colors by type
-  const TILE_COLORS = {
-    [TILE_TYPES.GRASS]:      { fill: 0x3a6b35, border: 0x2a5a28 },
-    [TILE_TYPES.STONE]:      { fill: 0x6a6a7a, border: 0x5a5a6a },
-    [TILE_TYPES.DIRT]:       { fill: 0x7a6a4a, border: 0x6a5a3a },
-    [TILE_TYPES.RIFT_CRACK]: { fill: 0x6a4a8a, border: 0x5a3a7a },
-    [TILE_TYPES.WALL]:       { fill: 0x4a4a5a, border: 0x3a3a4a },
-    [TILE_TYPES.PORTAL]:     { fill: 0x4a3a8a, border: 0x6a4aaa },
+  // Tile colors by type (with per-tile variation)
+  const vary = (color, amount) => {
+    const r = Math.min(255, Math.max(0, ((color >> 16) & 0xff) + amount));
+    const g = Math.min(255, Math.max(0, ((color >> 8) & 0xff) + amount));
+    const b = Math.min(255, Math.max(0, (color & 0xff) + amount));
+    return (r << 16) | (g << 8) | b;
   };
 
   for (let y = 0; y < rows; y++) {
     for (let x = 0; x < cols; x++) {
       const tileType = grid[y][x];
       if (tileType === -1) continue;
+
+      // Per-tile color variation
+      const VARIATION = ((x * 13 + y * 29) % 20) - 10;
+      const TILE_COLORS = {
+        [TILE_TYPES.GRASS]:      { fill: vary(0x3a6b35, VARIATION), border: 0x2a5a28 },
+        [TILE_TYPES.STONE]:      { fill: vary(0x6a6a7a, VARIATION), border: 0x5a5a6a },
+        [TILE_TYPES.DIRT]:       { fill: vary(0x7a6a4a, VARIATION), border: 0x6a5a3a },
+        [TILE_TYPES.RIFT_CRACK]: { fill: vary(0x6a4a8a, VARIATION), border: 0x5a3a7a },
+        [TILE_TYPES.WALL]:       { fill: vary(0x4a4a5a, VARIATION), border: 0x3a3a4a },
+        [TILE_TYPES.PORTAL]:     { fill: vary(0x4a3a8a, VARIATION), border: 0x6a4aaa },
+      };
 
       const colors = TILE_COLORS[tileType] || TILE_COLORS[TILE_TYPES.GRASS];
 
@@ -155,17 +164,18 @@ export function generateGardenMap(width = 16, height = 16) {
     const row = [];
     for (let x = 0; x < width; x++) {
       const r = rand(x, y);
+      const r2 = ((x * 17 + y * 31) >>> 0) % 100; // second random for variety
 
       // Rift crack area near center
       if (Math.abs(x - width / 2) < 2 && Math.abs(y - height / 2) < 2) {
         row.push(TILE_TYPES.RIFT_CRACK);
       }
-      // Dirt paths
-      else if (r < 12) {
+      // Dirt patches (scattered, not grid-aligned)
+      else if (r < 15 && r2 > 30) {
         row.push(TILE_TYPES.DIRT);
       }
-      // Stone patches
-      else if (r < 30) {
+      // Stone paths (larger clusters)
+      else if (r < 35 && r2 > 20) {
         row.push(TILE_TYPES.STONE);
       }
       // Default grass
