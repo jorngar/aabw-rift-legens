@@ -179,17 +179,9 @@ async function initGame() {
     spawnEnemy('riftKnight', 12, 12);
   }
 
-  // ---- Portal (CSS-based, not sprite) ----
-  const portalEl = document.createElement('div');
-  portalEl.style.cssText = 'position:fixed;width:60px;height:80px;border-radius:50%;background:radial-gradient(ellipse,rgba(168,85,247,0.8) 0%,rgba(74,158,255,0.4) 50%,transparent 70%);border:2px solid #a855f7;box-shadow:0 0 20px rgba(168,85,247,0.5),0 0 40px rgba(168,85,247,0.2);z-index:50;pointer-events:none;animation:portalPulse 2s ease-in-out infinite;';
-  portalEl.innerHTML = '<div style="width:100%;height:100%;display:flex;align-items:center;justify-content:center;font-size:20px;color:#e8ff47;text-shadow:0 0 10px #e8ff47;">◆</div>';
-  document.body.appendChild(portalEl);
-
-  const portalStyle = document.createElement('style');
-  portalStyle.textContent = '@keyframes portalPulse{0%,100%{box-shadow:0 0 20px rgba(168,85,247,0.5)}50%{box-shadow:0 0 35px rgba(168,85,247,0.8),0 0 60px rgba(168,85,247,0.3)}}';
-  document.head.appendChild(portalStyle);
-
-  // Update portal position each frame
+  // ---- Portal (animated CSS effect) ----
+  const { createPortal } = await import('./ui/portalEffect.js');
+  const portalEl = createPortal();
   const portalPos = { x: 8, y: 3 };
 
   // ---- Input ----

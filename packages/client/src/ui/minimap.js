@@ -29,12 +29,12 @@ export class Minimap {
     const gridSize = 16;
     const cellSize = w / gridSize;
 
-    // Clear
-    ctx.fillStyle = 'rgba(10,6,18,0.85)';
+    // Clear with terrain-colored background
+    ctx.fillStyle = '#1a2a1a';
     ctx.fillRect(0, 0, w, h);
 
     // Grid lines
-    ctx.strokeStyle = '#1a1a2a';
+    ctx.strokeStyle = '#2a3a2a';
     ctx.lineWidth = 0.5;
     for (let i = 0; i <= gridSize; i++) {
       ctx.beginPath();
@@ -47,15 +47,14 @@ export class Minimap {
       ctx.stroke();
     }
 
-    // Tiles
+    // Tiles with terrain colors
     if (this.world.grid) {
+      const tileColors = { 0: '#3a5a35', 1: '#5a5a6a', 2: '#6a5a3a', 3: '#5a3a7a', 5: '#3a3a4a', 6: '#4a3a8a' };
       for (let y = 0; y < this.world.grid.length; y++) {
         for (let x = 0; x < (this.world.grid[y]?.length || 0); x++) {
           const t = this.world.grid[y][x];
-          if (t === 5) { // wall
-            ctx.fillStyle = '#333';
-            ctx.fillRect(x * cellSize, y * cellSize, cellSize, cellSize);
-          }
+          ctx.fillStyle = tileColors[t] || '#2a3a2a';
+          ctx.fillRect(x * cellSize, y * cellSize, cellSize, cellSize);
         }
       }
     }
