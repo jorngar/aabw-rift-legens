@@ -289,10 +289,17 @@ export class RiftSystem {
   }
 
   _rebuildTilemap(grid) {
-    // Remove old tiles
-    const toRemove = this.camera.container.children.filter(c => c.tileType !== undefined);
-    toRemove.forEach(c => this.camera.container.removeChild(c));
-    // Render new tiles
+    // Remove any previously-added tile map containers (both the boot-time
+    // one from main.js and prior _rebuildTilemap calls). Tiles live inside
+    // an inner container, so filtering camera.container's direct children
+    // by `.tileType` never matched anything — containers stacked and later
+    // ones covered the merchant sprite / player / garden props.
+    const stale = this.camera.container.children.filter(c => c.__isTileMap);
+    stale.forEach(c => {
+      this.camera.container.removeChild(c);
+      c.destroy?.({ children: true });
+    });
+    // Render fresh tiles.
     renderTileMap(this.assets, grid, this.camera.container);
   }
 

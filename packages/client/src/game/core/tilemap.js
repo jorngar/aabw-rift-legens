@@ -26,6 +26,10 @@ function seededRandom(x, y, seed = 0) {
 export function renderTileMap(assets, grid, parent) {
   const container = new PIXI.Container();
   container.sortableChildren = true;
+  // Marker so RiftSystem._rebuildTilemap can find and destroy previous tile
+  // containers on rift entry/exit — without this, containers stack and later
+  // ones cover merchant / player / props.
+  container.__isTileMap = true;
   const rows = grid.length;
   const cols = grid[0].length;
 

@@ -469,11 +469,13 @@ async function initGame(classId = 'warrior') {
   window.addEventListener('keydown', (e) => {
     const key = e.key.toLowerCase();
 
-    // F — interact (rift portal or shop)
+    // F — interact (rift portal or shop). Merchant is garden-only; block
+    // the shop toggle while the player is inside a rift so they can't
+    // restock mid-run (matches the "no mid-dungeon shopping" design).
     if (key === 'f') {
       if (riftSystem.showPrompt) {
         riftSystem.enterRift();
-      } else if (tileDistance(playerEntity.pos, merchantPos) < 2) {
+      } else if (!riftSystem.inDungeon && tileDistance(playerEntity.pos, merchantPos) < 2) {
         shopUI.toggle();
       }
     }
@@ -695,17 +697,27 @@ async function initGame(classId = 'warrior') {
     // HUD
     updateHUD();
 
-    // Merchant proximity — show label and prompt
-    const merchantScreen = tileToScreen(merchantPos.x, merchantPos.y);
-    merchantLabel.style.left = `${merchantScreen.x + camera.container.x - 30}px`;
-    merchantLabel.style.top = `${merchantScreen.y + camera.container.y - 60}px`;
-    const merchantDist = tileDistance(playerEntity.pos, merchantPos);
-    if (merchantDist < 2.5) {
-      merchantPrompt.style.display = 'block';
-      merchantPrompt.style.left = `${merchantScreen.x + camera.container.x - 70}px`;
-      merchantPrompt.style.top = `${merchantScreen.y + camera.container.y - 80}px`;
-    } else {
+    // Merchant proximity — garden only. Hide label + prompt + sprite while
+    // inside the rift so the merchant can't be seen or interacted with
+    // through the dungeon layer.
+    if (riftSystem.inDungeon) {
+      merchantLabel.style.display = 'none';
       merchantPrompt.style.display = 'none';
+      merchantSprite.visible = false;
+    } else {
+      merchantSprite.visible = true;
+      merchantLabel.style.display = '';
+      const merchantScreen = tileToScreen(merchantPos.x, merchantPos.y);
+      merchantLabel.style.left = `${merchantScreen.x + camera.container.x - 30}px`;
+      merchantLabel.style.top = `${merchantScreen.y + camera.container.y - 60}px`;
+      const merchantDist = tileDistance(playerEntity.pos, merchantPos);
+      if (merchantDist < 2.5) {
+        merchantPrompt.style.display = 'block';
+        merchantPrompt.style.left = `${merchantScreen.x + camera.container.x - 70}px`;
+        merchantPrompt.style.top = `${merchantScreen.y + camera.container.y - 80}px`;
+      } else {
+        merchantPrompt.style.display = 'none';
+      }
     }
 
     // Portal proximity glow (CSS portal)
