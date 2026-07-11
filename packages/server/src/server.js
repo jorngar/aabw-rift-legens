@@ -17,6 +17,7 @@ import { getDataSources } from './database.js';
 import { getBalance, setBalance, getAllBalance, getMatchHistory, getAdjustments, getClasses, getClass, getAggregateStats, getDashboardData, saveDB, recordMatch, initDB } from './database.js';
 import { getRuntimeConfig } from './runtime-config.js';
 import { verifyConnection as verifyPostgresConnection } from './db/pool.js';
+import { applySchema } from './db/migrate.js';
 import { seedPatches } from './patch-seeder.js';
 import { SessionManager } from './session-manager.js';
 import { compressSession } from './path-compressor.js';
@@ -394,6 +395,11 @@ async function start() {
   // Non-fatal on error so the rest of the server still boots.
   try {
     await verifyPostgresConnection();
+    // Auto-apply schema in prod or when explicitly requested (Railway sets
+    // NODE_ENV=production). Local dev uses `pnpm --filter server migrate`.
+    if (process.env.NODE_ENV === 'production' || process.env.APPLY_SCHEMA_ON_BOOT === '1') {
+      await applySchema();
+    }
     await seedPatches();
   } catch (err) {
     console.warn(`[DB] Postgres unreachable — A/B collection disabled: ${err.message}`);
