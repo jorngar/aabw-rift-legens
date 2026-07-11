@@ -7,7 +7,7 @@ import { tileDistance, tileToScreen } from '../core/isometric.js';
 import { generateDungeonMap, renderTileMap } from '../core/tilemap.js';
 import { isBlocked } from '@rift-seed/shared/patch';
 import { createEntity } from '../core/ecs.js';
-import { createStatefulSprite, enemyAnimationProfile, SLIME_ANIMATION_PROFILE } from './animation-system.js';
+import { createStatefulSprite, ORC_ANIMATION_PROFILE, SLIME_ANIMATION_PROFILE } from './animation-system.js';
 
 export class RiftSystem {
   constructor(player, world, assets, camera, emitEvent, progression) {
@@ -178,8 +178,8 @@ export class RiftSystem {
   _spawnEnemy(type, x, y) {
     const def = ENEMIES[type] || ENEMIES.shadowBeast;
     const isShadowSlime = type === 'shadowBeast';
-    const visual = createStatefulSprite(this.assets, isShadowSlime ? SLIME_ANIMATION_PROFILE : enemyAnimationProfile('heroHeavy'), {
-      scale: isShadowSlime ? 2 : 1.05,
+    const visual = createStatefulSprite(this.assets, isShadowSlime ? SLIME_ANIMATION_PROFILE : ORC_ANIMATION_PROFILE, {
+      scale: isShadowSlime ? 2 : 2.3,
       anchorY: 0.82,
     });
     const sprite = visual.sprite;

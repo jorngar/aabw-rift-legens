@@ -25,6 +25,7 @@
   <nav class="tabs" role="tablist">
     <button class="tab active" data-tab="patch" role="tab">⚙ Patch Implementation</button>
     <button class="tab" data-tab="analytics" role="tab">📊 Recommendations &amp; Analytics</button>
+    <button class="tab" data-tab="sop" role="tab">🧠 Agent SOP</button>
   </nav>
 
   <main>
@@ -78,6 +79,53 @@
 
       <h3 class="subhead">Recommendations</h3>
       <div id="recommendations" class="recs"></div>
+    </section>
+
+    <!-- TAB 3: TELEMETRY AGENT SOP -->
+    <section class="panel" id="tab-sop">
+      <div class="section-head">
+        <h2>Telemetry Agent SOP</h2>
+        <div class="actions">
+          <select id="sop-source" class="sop-input" title="Data source to ingest from"></select>
+          <label class="sop-toggle"><input id="sop-autodeploy" type="checkbox" checked /> auto-deploy</label>
+          <button id="btn-sop-run" class="btn primary">Run SOP</button>
+          <button id="btn-sop-refresh" class="btn">Refresh</button>
+        </div>
+      </div>
+      <p class="hint">Standard operating procedure: ingest data points → measure player experience → generate recommendations → patch proposal + expected KPIs → propose new data sources → deploy. Reasoning phases run on the local Hermes model (~1 min each).</p>
+
+      <div id="sop-status" class="sop-status"></div>
+      <div id="sop-phases" class="sop-phases"></div>
+
+      <div id="sop-outputs">
+        <div id="sop-experience-wrap" style="display:none">
+          <h3 class="subhead">Player Experience Scorecard</h3>
+          <div class="chart-card wide"><div id="sop-experience" class="chart"></div></div>
+          <div id="sop-experience-detail" class="recs"></div>
+        </div>
+
+        <div id="sop-recs-wrap" style="display:none">
+          <h3 class="subhead">Recommendations <span class="muted">(with data backing)</span></h3>
+          <div id="sop-recommendations" class="recs"></div>
+        </div>
+
+        <div id="sop-proposal-wrap" style="display:none">
+          <h3 class="subhead">Patch Proposal for Devs</h3>
+          <div id="sop-proposal" class="patch-list"></div>
+          <h3 class="subhead">Expected KPIs to Improve</h3>
+          <div id="sop-kpis" class="item-table"></div>
+        </div>
+
+        <div id="sop-sources-wrap" style="display:none">
+          <h3 class="subhead">Proposed New Data Sources</h3>
+          <div id="sop-datasources" class="recs"></div>
+        </div>
+
+        <div id="sop-deploy-wrap" style="display:none">
+          <h3 class="subhead">Deployment</h3>
+          <div id="sop-deploy" class="adjustments"></div>
+        </div>
+      </div>
     </section>
   </main>
 

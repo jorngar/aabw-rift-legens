@@ -9,28 +9,57 @@ const ASSET_BASE = '/assets/';
 
 // Each entry: [key, sheetFilename, atlasFilename]
 const SHEETS = [
-  ['chibiIdle',    'sprites/chibi/idle.png',        'atlases/chibi/idle.json'],
-  ['chibiWalk',    'sprites/chibi/walk.png',        'atlases/chibi/walk.json'],
-  ['chibiAttack',  'sprites/chibi/attack.png',      'atlases/chibi/attack.json'],
-  ['heroHeavy',    'sprites/flare/male-heavy.png',  'atlases/flare/male-heavy.json'],
   ['magician',     'sprites/flare/magician.png',    'atlases/flare/magician.json'],
 ];
 
-// Free Characters Animations Asset Pack. These are transparent, horizontal
-// 96x96 frame strips, so they can be sliced directly without generated atlases.
-const FREE_CHARACTER_BASE = 'sprites/free-characters';
-const STRIP_SHEETS = [
-  ['soldierIdle',     `${FREE_CHARACTER_BASE}/soldier/idle.png`],
-  ['soldierWalk',     `${FREE_CHARACTER_BASE}/soldier/walk.png`],
-  ['soldierAttack',   `${FREE_CHARACTER_BASE}/soldier/attack.png`],
-  ['soldierHurt',     `${FREE_CHARACTER_BASE}/soldier/hurt.png`],
-  ['soldierDeath',    `${FREE_CHARACTER_BASE}/soldier/death.png`],
-  ['packSlimeIdle',   `${FREE_CHARACTER_BASE}/slime/idle.png`],
-  ['packSlimeWalk',   `${FREE_CHARACTER_BASE}/slime/walk.png`],
-  ['packSlimeAttack', `${FREE_CHARACTER_BASE}/slime/attack.png`],
-  ['packSlimeHurt',   `${FREE_CHARACTER_BASE}/slime/hurt.png`],
-  ['packSlimeDeath',  `${FREE_CHARACTER_BASE}/slime/death.png`],
+// Tiny Heroes 96x96 pack (SpriteSheets(96x96)). Same art family and cell
+// geometry as the old free-characters extracts, but with a full roster and a
+// complete animation set per character. Horizontal strips, 96x96 frames, so
+// they slice directly without generated atlases. With_Shadows variants match
+// the baked ground shadow the old sheets had.
+const PACK_BASE = 'sprites/SpriteSheets(96x96)';
+const PACK_VARIANT = 'With_Shadows';
+
+// keyPrefix -> pack folder. Gameplay mapping:
+//   soldier   = warrior class          mage      = mage class
+//   rogue     = rogue class (polearm)  ranger    = ranger class (bow)
+//   packSlime = shadowBeast enemy      orc       = riftKnight enemy (axe)
+// The remaining sets are loaded so encounters can be reskinned without code.
+const PACK_SETS = [
+  ['soldier',   'Human_Soldier_Sword_Shield'],
+  ['mage',      'Human_Mage'],
+  ['rogue',     'Human_Soldier_Polearm'],
+  ['ranger',    'Human_Bow'],
+  ['mace',      'Human_Soldier_Mace_Shield'],
+  ['packSlime', 'Monster_Slime'],
+  ['orc',       'Monster_Orc_Axe'],
+  ['orcShield', 'Monster_Orc_Shield'],
+  ['orcFist',   'Monster_Orc_Fist'],
+  ['goblin',    'Monster_Goblin_Bow'],
 ];
+
+// keySuffix -> pack sheet name
+const PACK_ANIMS = [
+  ['Idle', 'Idle'],
+  ['Walk', 'Walk'],
+  ['Attack', 'Attack1'],
+  ['Attack2', 'Attack2'],
+  ['Block', 'Block'],
+  ['Jump', 'Jump_Fall'],
+  ['Hurt', 'Hurt'],
+  ['Death', 'Death'],
+];
+
+const STRIP_SHEETS = PACK_SETS.flatMap(([prefix, folder]) =>
+  PACK_ANIMS.map(([suffix, sheet]) => [
+    `${prefix}${suffix}`,
+    `${PACK_BASE}/${folder}/${PACK_VARIANT}/${folder}_${sheet}-Sheet.png`,
+  ]),
+);
+
+// The ranger's third attack (arrowShot skill) reuses the bow's alternate
+// attack sheet — the pack has no dedicated Attack3.
+STRIP_SHEETS.push(['rangerAttack3', `${PACK_BASE}/Human_Bow/${PACK_VARIANT}/Human_Bow_Attack2-Sheet.png`]);
 
 function sliceStrip(texture, frameWidth = 96, frameHeight = 96) {
   const textures = {};
@@ -60,9 +89,9 @@ export async function loadRiftAssets() {
     sheets[key] = spritesheet;
   }
 
-  for (const [key, sheetFile] of STRIP_SHEETS) {
+  for (const [key, sheetFile, frameWidth = 96, frameHeight = frameWidth] of STRIP_SHEETS) {
     const texture = await PIXI.Assets.load(ASSET_BASE + sheetFile);
-    sheets[key] = sliceStrip(texture);
+    sheets[key] = sliceStrip(texture, frameWidth, frameHeight);
   }
 
   return {

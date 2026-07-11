@@ -1,9 +1,19 @@
-import { getBalance } from './database.js';
+import { getBalance, getDataSources } from './database.js';
 
 /** Convert the server balance table into the client game's public config shape. */
 export function getRuntimeConfig() {
   return {
     generatedAt: Date.now(),
+    // Data inputs deployed by the telemetry SOP; the SDK reads this list to
+    // know which additional instrumentation the analytics side has requested.
+    telemetry: {
+      additionalDataSources: getDataSources('deployed').map(s => ({
+        id: s.id,
+        name: s.name,
+        description: s.description,
+        exampleEvent: s.example_event || null,
+      })),
+    },
     player: {
       hp: getBalance('player.base_hp', 500),
       maxHp: getBalance('player.base_hp', 500),
