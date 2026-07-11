@@ -1,7 +1,7 @@
 // ============================================================
 // Progression System — XP, leveling, SEED rank
 // ============================================================
-import { RANKS, LEVEL_BONUS, SKILL_SCALING, SKILLS } from '@rift-seed/shared/config';
+import { RANKS, LEVEL_BONUS } from '@rift-seed/shared/config';
 import { EventType, createEvent } from '@rift-seed/shared/events';
 
 export class ProgressionSystem {
@@ -10,6 +10,7 @@ export class ProgressionSystem {
     this.emitEvent = emitEvent;
     this.xp = 0;
     this.level = 1;
+    this.player.level = 1;
     this.rank = 'D';
     this.kills = 0;
     this.skillsUsed = 0;
@@ -22,7 +23,18 @@ export class ProgressionSystem {
   }
 
   addXP(amount, reason) {
+    const previousXp = this.xp;
     this.xp += amount;
+    this.emitEvent(createEvent(EventType.XP_GAIN, this.player.id, {
+      actorId: this.player.id,
+      actorType: 'player',
+      classId: this.player.classId,
+      playerLevel: this.level,
+      amount,
+      xpBefore: previousXp,
+      xpAfter: this.xp,
+      reason,
+    }));
     this._checkLevelUp();
   }
 
@@ -52,21 +64,29 @@ export class ProgressionSystem {
       }
     }
 
-    if (newLevel > this.level) {
+    const didLevelUp = newLevel > this.level;
+    if (didLevelUp) {
+      const previousLevel = this.level;
+      const gained = newLevel - this.level;
       this.level = newLevel;
-      // Apply stat bonuses
-      this.player.stats.maxHp += LEVEL_BONUS.maxHp;
+      // Combat reads entity.level for skill/heal scaling
+      this.player.level = newLevel;
+      // Apply stat bonuses (per level gained)
+      this.player.stats.maxHp += LEVEL_BONUS.maxHp * gained;
       this.player.stats.hp = this.player.stats.maxHp;
-      this.player.stats.maxMp += LEVEL_BONUS.maxMp;
+      this.player.stats.maxMp += LEVEL_BONUS.maxMp * gained;
       this.player.stats.mp = this.player.stats.maxMp;
-      this.player.stats.damage += LEVEL_BONUS.damage;
-      if (LEVEL_BONUS.speed) this.player.stats.speed = (this.player.stats.speed || 3) + LEVEL_BONUS.speed;
-      if (LEVEL_BONUS.attackRange) this.player.attackRange = (this.player.attackRange || 2) + LEVEL_BONUS.attackRange;
+      if (LEVEL_BONUS.speed) this.player.stats.speed = (this.player.stats.speed || 3) + LEVEL_BONUS.speed * gained;
 
-      // Scale skills with level
-      this._scaleSkills(newLevel);
-
-      this.emitEvent(createEvent(EventType.RESPAWN, this.player.id, { level: newLevel, xp: this.xp }));
+      this.emitEvent(createEvent(EventType.LEVEL_UP, this.player.id, {
+        actorId: this.player.id,
+        actorType: 'player',
+        classId: this.player.classId,
+        previousLevel,
+        playerLevel: newLevel,
+        levelsGained: gained,
+        xp: this.xp,
+      }));
     }
 
     // Check rank
@@ -79,34 +99,14 @@ export class ProgressionSystem {
           this.rank = rankNames[i];
           return { leveled: true, newLevel, rankUp: true, oldRank, newRank: this.rank };
         }
-        return { leveled: newLevel > this.level, newLevel, rankUp: false };
+        return { leveled: didLevelUp, newLevel, rankUp: false };
       }
     }
-    return { leveled: false, rankUp: false };
+    return { leveled: didLevelUp, rankUp: false };
   }
 
   getRankInfo() {
     return RANKS[this.rank] || RANKS.D;
-  }
-
-  _scaleSkills(level) {
-    // Scale skill damage/healing based on level
-    for (const [skillId, scaling] of Object.entries(SKILL_SCALING)) {
-      const skill = SKILLS[skillId];
-      if (!skill) continue;
-      if (scaling.damagePerLevel && skill.damage !== undefined) {
-        skill.damage += scaling.damagePerLevel;
-      }
-      if (scaling.healPerLevel && skill.healAmount !== undefined) {
-        skill.healAmount += scaling.healPerLevel;
-      }
-      if (scaling.manaReduction && skill.manaCost !== undefined) {
-        skill.manaCost = Math.max(5, skill.manaCost - scaling.manaReduction);
-      }
-      if (scaling.rangePerLevel && skill.range !== undefined) {
-        skill.range += scaling.rangePerLevel;
-      }
-    }
   }
 
   trackEvent(event) {

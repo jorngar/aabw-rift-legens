@@ -25,6 +25,42 @@ export const PLAYER_DEFAULTS = Object.freeze({
   attackCooldownMs: 600,
   attackRange: 2.0,
   startingGold: 100,
+  /** Collision radius in tiles — combat ranges measure edge-to-edge */
+  hitRadius: 0.4,
+  critChance: 0.15,
+  critMult: 1.8,
+});
+
+/**
+ * Per-class combat modifiers, applied as multipliers over PLAYER_DEFAULTS
+ * (so Hermes runtime tuning of the defaults still affects every class).
+ * Passive fields map to entity flags read by the combat system.
+ */
+export const CLASS_STATS = Object.freeze({
+  warrior: {
+    hpMult: 1.3, mpMult: 0.6, damageMult: 1.15, speedMult: 0.93, rangeMult: 1.0,
+    attackSpeedMult: 0.95, basicDamageLevelMult: 1.15,
+    damageTakenMult: 0.9, // Thick Skin: -10% damage taken
+    weaponAffinities: { martial: 1.2, finesse: 0.9, ranged: 0.8, arcane: 0.7, heavy: 1.15 },
+  },
+  mage: {
+    hpMult: 0.7, mpMult: 1.5, damageMult: 0.7, speedMult: 0.85, rangeMult: 1.0,
+    attackSpeedMult: 0.9, basicDamageLevelMult: 0.75,
+    skillDamageMult: 1.2, // Arcane Overflow: +20% skill damage
+    weaponAffinities: { martial: 0.7, finesse: 0.8, ranged: 0.9, arcane: 1.3, heavy: 0.65 },
+  },
+  rogue: {
+    hpMult: 0.8, mpMult: 0.8, damageMult: 0.95, speedMult: 1.33, rangeMult: 1.0,
+    attackSpeedMult: 1.15, basicDamageLevelMult: 1.0,
+    critChance: 0.25, // Backstab: sharply improved crit chance
+    weaponAffinities: { martial: 0.95, finesse: 1.25, ranged: 1.05, arcane: 0.8, heavy: 0.7 },
+  },
+  ranger: {
+    hpMult: 0.75, mpMult: 1.0, damageMult: 0.85, speedMult: 1.07,
+    attackSpeedMult: 1.08, basicDamageLevelMult: 0.9,
+    rangeMult: 1.2, // Eagle Eye: +20% attack range
+    weaponAffinities: { martial: 0.9, finesse: 1.0, ranged: 1.25, arcane: 0.85, heavy: 1.05 },
+  },
 });
 
 /** Enemy definitions */
@@ -40,6 +76,8 @@ export const ENEMIES = Object.freeze({
     attackRange: 1.2,
     attackCooldownMs: 1500,
     xpReward: 25,
+    /** Collision radius in tiles — the slime renders at 2x scale */
+    hitRadius: 0.7,
   },
   riftKnight: {
     name: 'Rift Knight',
@@ -51,7 +89,20 @@ export const ENEMIES = Object.freeze({
     attackCooldownMs: 2500,
     xpReward: 100,
     isBoss: true,
+    hitRadius: 0.55,
   },
+});
+
+/**
+ * Monster stat scaling. Multipliers compound additively:
+ * mult = 1 + wave*perWave + (playerLevel-1)*perPlayerLevel + (tier-1)*perTier
+ */
+export const ENEMY_SCALING = Object.freeze({
+  hp: { perWave: 0.15, perPlayerLevel: 0.10, perTier: 0.5 },
+  damage: { perWave: 0.12, perPlayerLevel: 0.08, perTier: 0.4 },
+  speed: { perWave: 0.01, perPlayerLevel: 0.005, perTier: 0.03, maxMultiplier: 1.2 },
+  reward: { perWave: 0.10, perPlayerLevel: 0.05, perTier: 0.3 }, // applies to xp and gold
+  minimumMultiplier: 0.55,
 });
 
 /** Skill definitions */
@@ -205,6 +256,18 @@ export const RIFT_WAVES = Object.freeze({
     { count: 7, type: 'shadowBeast', delay: 3 },
     { count: 1, type: 'riftKnight', delay: 5, isBoss: true },
   ],
+  2: [
+    { count: 4, type: 'shadowBeast', delay: 2 },
+    { count: 6, type: 'shadowBeast', delay: 3 },
+    { count: 8, type: 'shadowBeast', delay: 3 },
+    { count: 2, type: 'riftKnight', delay: 5, isBoss: true },
+  ],
+  3: [
+    { count: 6, type: 'shadowBeast', delay: 2 },
+    { count: 8, type: 'shadowBeast', delay: 3 },
+    { count: 10, type: 'shadowBeast', delay: 3 },
+    { count: 3, type: 'riftKnight', delay: 5, isBoss: true },
+  ],
 });
 
 /** SEED Rank progression */
@@ -225,12 +288,18 @@ export const LEVEL_BONUS = Object.freeze({
   attackRange: 0.1,
 });
 
-/** Skill scaling per level */
+/**
+ * Skill scaling per level — applied at cast time in combat.js so every
+ * skill scales and the shared SKILLS config is never mutated.
+ */
 export const SKILL_SCALING = Object.freeze({
-  shadowStrike: { damagePerLevel: 8, manaReduction: 1 },
-  riftSlash: { damagePerLevel: 5, manaReduction: 1 },
-  heal: { healPerLevel: 6, manaReduction: 1 },
-  riftTeleport: { rangePerLevel: 0.5, manaReduction: 2 },
+  damagePerLevelPct: 0.10,
+  healPerLevelPct: 0.10,
+});
+
+export const WEAPON_SCALING = Object.freeze({
+  damagePerLevelPct: 0.04,
+  skillPowerPerLevelPct: 0.05,
 });
 
 /** Missions */
@@ -243,22 +312,28 @@ export const MISSIONS = Object.freeze([
 
 /** Items */
 export const ITEMS = Object.freeze({
-  health_potion: { name: 'Health Potion', type: 'consumable', heal: 50, price: 15, desc: 'Restores 50 HP' },
-  mana_potion: { name: 'Mana Potion', type: 'consumable', mana: 30, price: 15, desc: 'Restores 30 MP' },
-  rift_shard: { name: 'Rift Shard', type: 'consumable', price: 40, desc: 'Teleport to rift' },
-  scroll: { name: 'Scroll', type: 'misc', price: 10, desc: 'Ancient text' },
-  key: { name: 'Rift Key', type: 'key', price: 50, desc: 'Opens rift gates' },
-  ether_crystal: { name: 'Ether Crystal', type: 'material', price: 30, desc: 'Rift energy' },
-  rune_stone: { name: 'Rune Stone', type: 'material', price: 25, desc: 'Enchanted stone' },
+  health_potion: { name: 'Health Potion', type: 'consumable', usableFromInventory: true, heal: 50, price: 15, desc: 'Restores 50 HP' },
+  mana_potion: { name: 'Mana Potion', type: 'consumable', usableFromInventory: true, mana: 30, price: 15, desc: 'Restores 30 MP' },
+  rift_shard: { name: 'Rift Shard', type: 'consumable', price: 40, desc: 'Use (key 3) to open the Rift instantly' },
+  scroll: { name: 'Battle Scroll', type: 'consumable', usableFromInventory: true, buffDamage: 0.25, buffDuration: 15000, price: 35, desc: '+25% damage for 15s' },
+  key: { name: 'Rift Key', type: 'key', price: 50, desc: 'Required to enter Rifts above Tier 1' },
+  ether_crystal: { name: 'Ether Crystal', type: 'material', sellOnly: true, sellPrice: 60, price: 120, desc: 'Boss loot — sells for 60 gold' },
+  rune_stone: { name: 'Rune Stone', type: 'material', sellOnly: true, sellPrice: 12, price: 24, desc: 'Monster loot — sells for 12 gold' },
 });
 
-/** Weapons */
+/** Weapons — weaponClass controls class affinity; attackSpeedPct affects attack cadence. */
 export const WEAPONS = Object.freeze({
-  gunblade: { name: 'Gunblade', damage: 15, speed: 0, price: 200 },
-  rift_staff: { name: 'Rift Staff', damage: 10, maxMp: 20, skillDmg: 10, price: 300 },
-  pistol: { name: 'Pistol', damage: 10, speed: 0.2, price: 150 },
-  seed_rifle: { name: 'SEED Rifle', damage: 25, speed: -0.3, price: 350 },
-  rune_daggers: { name: 'Rune Daggers', damage: 8, speed: 0.5, price: 250 },
+  pistol: { name: 'Pistol', weaponClass: 'ranged', damage: 8, attackSpeedPct: 0.10, rangeBonus: 1.5, price: 150, desc: 'Fast ranged sidearm' },
+  gunblade: { name: 'Gunblade', weaponClass: 'martial', damage: 15, rangeBonus: 0.25, price: 200, desc: 'Reliable close-range blade' },
+  rune_daggers: { name: 'Rune Daggers', weaponClass: 'finesse', damage: 12, attackSpeedPct: 0.25, price: 250, desc: 'Rapid finesse strikes' },
+  rift_staff: { name: 'Rift Staff', weaponClass: 'arcane', damage: 6, maxMp: 30, skillDmg: 15, rangeBonus: 1.0, price: 300, desc: 'Amplifies spell damage' },
+  seed_rifle: { name: 'SEED Rifle', weaponClass: 'heavy', damage: 25, attackSpeedPct: -0.15, rangeBonus: 2.5, price: 350, desc: 'Slow, high-impact ranged weapon' },
+});
+
+/** Monster loot drops (besides gold) */
+export const ITEM_DROPS = Object.freeze({
+  shadowBeast: [{ itemId: 'rune_stone', chance: 0.2 }],
+  riftKnight: [{ itemId: 'ether_crystal', chance: 1.0 }, { itemId: 'key', chance: 0.5 }],
 });
 
 /** Gold drops */

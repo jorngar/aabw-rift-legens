@@ -28,6 +28,13 @@ export const EventType = Object.freeze({
   ITEM_PICKUP:    'item:pickup',
   ITEM_USE:       'item:use',
   ITEM_PURCHASE:  'item:purchase',
+  ITEM_SELL:      'item:sell',
+  WEAPON_EQUIP:   'weapon:equip',
+
+  // -- Progression / spawning
+  XP_GAIN:        'progression:xp',
+  LEVEL_UP:       'progression:level_up',
+  ENEMY_SPAWN:    'enemy:spawn',
 
   // -- Session
   SESSION_START:  'session:start',
@@ -64,7 +71,7 @@ export const EventType = Object.freeze({
 });
 
 /** Version of the normalized event envelope emitted by the SDK. */
-export const TELEMETRY_SCHEMA_VERSION = '1.0.0';
+export const TELEMETRY_SCHEMA_VERSION = '1.1.0';
 
 /**
  * @typedef {Object} GameEvent

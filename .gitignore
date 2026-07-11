@@ -44,9 +44,6 @@ tools/asset-pipeline/terrain/
 tools/asset-pipeline/ui/
 tools/asset-pipeline/vfx/
 
-# Local Data
-packages/server/data/game.json
-
 # Python cache
 __pycache__/
 *.pyc

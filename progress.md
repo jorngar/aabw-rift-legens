@@ -64,6 +64,24 @@ Original prompt: okay now we need to focus on fixing the game for the demo, we h
 - The new `gitignore added` commit removed the 6,141 tracked `node_modules` files. One ignored runtime file is still tracked: `packages/server/data/game.json`. The safe index-only cleanup could not run because the environment approval quota was exhausted. Run `git rm --cached packages/server/data/game.json`, then commit that deletion; the local file will remain.
 - A second immediate movement-frame capture was blocked by the same approval quota; animation state transitions are covered by unit tests.
 
+## Session 2026-07-11 — Combat balance, shop effects, Postgres telemetry
+
+- Added a shared pure balance model for class weapon affinities, level damage, skill scaling, attack speed/range, healing, and enemy scaling.
+- Basic attacks now derive damage from class base + level + equipped weapon. Skills derive damage from skill base + class caster multiplier + level + weapon skill power. Equipment order no longer mutates or double-counts damage.
+- Added weapon classes and meaningful affinity values for Warrior, Mage, Rogue, and Ranger. Weapon attack-speed modifiers now affect attack cadence rather than movement speed.
+- Applied the same enemy scaling function to overworld and rift spawns; HP, damage, speed, XP, and gold scale with player level, wave, and tier.
+- Shop purchases, sales, consumables, and equipment now have explicit behavior and telemetry. Sell-only loot has explicit sale prices; materials cannot appear in the buy list.
+- Added telemetry schema v1.1 dimensions for class/level, enemy level, wave/tier, weapon class, item type, effective weapon stats, and economy before/after values.
+- Integrated the A/B Postgres scaffold and added `gameplay_events` plus `game_catalog`. Server startup migrates/seeds Postgres when available and degrades cleanly to SQLite/in-memory telemetry when unavailable.
+- Added 13 regression tests across balance, combat, inventory/progression, telemetry normalization, and parameterized Postgres inserts. Total: 32 tests passing; production build passes.
+- Browser verification: Warrior level 2 Gunblade purchase changed gold 224→24, real damage 40→59, and range 2.1→2.35. Shop displayed class-specific effective values and zero browser errors.
+- Validation artifacts: `packages/client/output/balance-shop-pass/` and `.playwright-cli/page-2026-07-11T13-34-08-377Z.png`.
+
+## Remaining balance telemetry TODO
+
+- Start local Postgres with `docker compose up -d postgres` and verify `/api/telemetry/storage`; Docker socket access was unavailable in this run.
+- Existing Pixi asset loading emits duplicate texture-cache warnings. They predate this balance work and do not produce browser errors, but should be namespaced in the asset loader later.
+
 ## Session 2026-07-11 — Video intro and free animation pack
 
 - Replaced the timed text title sequence with `riftseed_intro.mp4` as the full-screen intro visual. The video is muted, looping, inline, uses `intro-video.png` as its poster/fallback, and preserves Enter-to-start; clicking the screen now starts the game too.

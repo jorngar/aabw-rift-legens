@@ -3,8 +3,8 @@
 // ============================================================
 import { EventType, createEvent } from '@rift-seed/shared/events';
 import { ENEMIES } from '@rift-seed/shared/config';
-import { meleeAttack, combatTick, hasEffect } from '../core/combat.js';
-import { tileDistance, getDirection, tileToScreen } from '../core/isometric.js';
+import { meleeAttack, combatTick, hasEffect, combatDistance } from '../core/combat.js';
+import { getDirection, tileToScreen } from '../core/isometric.js';
 import { triggerAttackAnimation } from './animation-system.js';
 
 /**
@@ -80,7 +80,9 @@ export function enemyAISystem(world, dt, emitEvent) {
   for (const entity of world.query('isEnemy', 'pos', 'stats')) {
     if (entity.stats.hp <= 0) continue;
 
-    const dist = tileDistance(entity.pos, player.pos);
+    // Edge-to-edge distance — matches the range check inside meleeAttack,
+    // so entering 'attacking' state guarantees the swing can land.
+    const dist = combatDistance(entity, player);
     const def = ENEMIES[entity.enemyType] || ENEMIES.shadowBeast;
     const previousState = entity.aiState;
 
@@ -99,7 +101,7 @@ export function enemyAISystem(world, dt, emitEvent) {
     }
 
     // State transitions
-    if (dist <= def.attackRange) {
+    if (dist <= (entity.attackRange || def.attackRange)) {
       entity.aiState = 'attacking';
     } else if (dist <= def.aggroRange) {
       entity.aiState = 'chasing';

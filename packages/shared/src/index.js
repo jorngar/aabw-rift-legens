@@ -8,3 +8,4 @@ export {
 } from './config.js';
 export { TILE_TYPES, parseLayout, validatePatch, hashPlayerToVariant } from './patch.js';
 export * as scoring from './scoring.js';
+export * from './balance.js';

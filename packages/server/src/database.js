@@ -3,6 +3,7 @@
 // Telemetry agent reads/writes to adjust game balance live
 // ============================================================
 import initSqlJs from 'sql.js';
+import { ITEMS, WEAPONS } from '@rift-seed/shared/config';
 import { join, dirname } from 'path';
 import { fileURLToPath } from 'url';
 import { mkdirSync, readFileSync, writeFileSync, existsSync } from 'fs';
@@ -369,7 +370,7 @@ export function getDashboardData() {
   ].map(item => {
     // Estimate impact: consumables scale with price/heal, weapons with damage.
     let impact = 0;
-    if (item.kind === 'weapon') impact = Number((item.damage || 0) + (item.speed || 0) * 50 + (item.skillDmg || 0));
+    if (item.kind === 'weapon') impact = Number((item.damage || 0) + (item.attackSpeedPct || 0) * 50 + (item.skillDmg || 0));
     else impact = Number(((item.heal || 0) + (item.mana || 0)) / 10 + (item.price || 0) / 25);
     return { ...item, liveBalance: balance[item.id] ?? null, estimatedImpact: Number(impact.toFixed(1)) };
   }).sort((a, b) => b.estimatedImpact - a.estimatedImpact);
@@ -387,22 +388,8 @@ export function getDashboardData() {
 
 // Static catalog mirror for the dashboard (kept in sync with @rift-seed/shared/config).
 const ITEMS_FOR_DASHBOARD = {
-  items: {
-    health_potion: { name: 'Health Potion', type: 'consumable', heal: 50, price: 15 },
-    mana_potion: { name: 'Mana Potion', type: 'consumable', mana: 30, price: 15 },
-    rift_shard: { name: 'Rift Shard', type: 'consumable', price: 40 },
-    scroll: { name: 'Scroll', type: 'misc', price: 10 },
-    key: { name: 'Rift Key', type: 'key', price: 50 },
-    ether_crystal: { name: 'Ether Crystal', type: 'material', price: 30 },
-    rune_stone: { name: 'Rune Stone', type: 'material', price: 25 },
-  },
-  weapons: {
-    gunblade: { name: 'Gunblade', damage: 15, speed: 0, price: 200 },
-    rift_staff: { name: 'Rift Staff', damage: 10, maxMp: 20, skillDmg: 10, price: 300 },
-    pistol: { name: 'Pistol', damage: 10, speed: 0.2, price: 150 },
-    seed_rifle: { name: 'SEED Rifle', damage: 25, speed: -0.3, price: 350 },
-    rune_daggers: { name: 'Rune Daggers', damage: 8, speed: 0.5, price: 250 },
-  },
+  items: ITEMS,
+  weapons: WEAPONS,
 };
 
 // ============================================================

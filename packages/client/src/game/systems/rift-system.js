@@ -3,6 +3,7 @@
 // ============================================================
 import { EventType, createEvent } from '@rift-seed/shared/events';
 import { RIFT_WAVES, ENEMIES } from '@rift-seed/shared/config';
+import { scaleEnemyStats } from '@rift-seed/shared/balance';
 import { tileDistance, tileToScreen } from '../core/isometric.js';
 import { generateDungeonMap, renderTileMap } from '../core/tilemap.js';
 import { isBlocked } from '@rift-seed/shared/patch';
@@ -10,13 +11,14 @@ import { createEntity } from '../core/ecs.js';
 import { createStatefulSprite, ORC_ANIMATION_PROFILE, SLIME_ANIMATION_PROFILE } from './animation-system.js';
 
 export class RiftSystem {
-  constructor(player, world, assets, camera, emitEvent, progression) {
+  constructor(player, world, assets, camera, emitEvent, progression, inventory = null) {
     this.player = player;
     this.world = world;
     this.assets = assets;
     this.camera = camera;
     this.emitEvent = emitEvent;
     this.progression = progression;
+    this.inventory = inventory;
 
     this.portalPos = { x: 8, y: 3 };
     this.inDungeon = false;
@@ -25,6 +27,7 @@ export class RiftSystem {
     this.dungeonEnemies = [];
     this.currentWave = 0;
     this.waveActive = false;
+    this._pendingSpawn = false;
     this.dungeonCleared = false;
 
     this._originalGrid = null;
@@ -106,11 +109,23 @@ export class RiftSystem {
 
   enterRift() {
     if (this.inDungeon) return;
+
     // Gate: refuse until every garden enemy is down.
     if (this._gardenEnemiesRemaining() > 0) return;
+
+    // Tiers above 1 consume a Rift Key (dropped by Rift Knights, sold by merchant)
+    if (this.dungeonTier > 1 && this.inventory) {
+      if (!this.inventory.hasItem('key')) {
+        this._showAnnouncement(`TIER ${this.dungeonTier} RIFT — RIFT KEY REQUIRED`);
+        return;
+      }
+      this.inventory.removeItem('key');
+    }
+
     this.inDungeon = true;
     this.currentWave = 0;
     this.dungeonCleared = false;
+    this._pendingSpawn = false;
     this.dungeonEnemies = [];
 
     if (this._promptEl) { this._promptEl.remove(); this._promptEl = null; }
@@ -154,6 +169,9 @@ export class RiftSystem {
     this.currentWave = waveIndex;
     const wave = waves[waveIndex];
     this.waveActive = true;
+    // Guard the spawn delay: without this, _updateDungeon sees zero alive
+    // enemies before the spawn fires and stacks the next wave on top.
+    this._pendingSpawn = true;
 
     this._showAnnouncement(`WAVE ${waveIndex + 1}/${waves.length}`);
 
@@ -172,6 +190,7 @@ export class RiftSystem {
         }
         this._spawnEnemy(wave.type, x, y);
       }
+      this._pendingSpawn = false;
     }, (wave.delay || 2) * 1000);
   }
 
@@ -183,13 +202,24 @@ export class RiftSystem {
       anchorY: 0.82,
     });
     const sprite = visual.sprite;
+
+    // Monsters grow with wave, rift tier, and player level
+    const wave = this.currentWave;
+    const tier = this.dungeonTier;
+    const playerLevel = this.progression?.level || 1;
+    const scaled = scaleEnemyStats(def, { wave, playerLevel, tier });
+
     const entity = createEntity({
       isEnemy: true, enemyType: type, name: def.name,
       pos: { x, y }, spawnPos: { x, y }, targetPos: null, path: null,
       direction: 'S', isMoving: false, aiState: 'idle',
       patrolTimer: Math.random() * 3, lastAttack: 0,
       attackCooldownMs: def.attackCooldownMs, attackRange: def.attackRange,
-      stats: { hp: def.hp, maxHp: def.hp, damage: def.damage, speed: def.speed },
+      hitRadius: def.hitRadius,
+      level: playerLevel,
+      stats: { hp: scaled.hp, maxHp: scaled.hp, damage: scaled.damage, speed: scaled.speed },
+      xpReward: scaled.xpReward,
+      goldMult: scaled.goldMultiplier,
       sprite,
       animations: visual.animations,
       animationState: 'idle',
@@ -198,10 +228,16 @@ export class RiftSystem {
     this.world.addEntity(entity);
     this.camera.container.addChild(sprite);
     this.dungeonEnemies.push(entity.id);
+    this.emitEvent(createEvent(EventType.ENEMY_SPAWN, entity.id, {
+      actorId: entity.id, actorType: 'enemy', enemyType: type,
+      enemyLevel: playerLevel, playerLevel, wave, tier,
+      area: `rift_tier_${tier}`, hpAfter: scaled.hp, damage: scaled.damage,
+      position: { x, y }, scaling: scaled.multipliers,
+    }));
   }
 
   _updateDungeon(dt) {
-    if (this.dungeonCleared || !this.waveActive) return;
+    if (this.dungeonCleared || !this.waveActive || this._pendingSpawn) return;
 
     const alive = this.dungeonEnemies.filter(id => {
       const e = this.world.getEntity(id);
@@ -219,9 +255,13 @@ export class RiftSystem {
   _dungeonComplete() {
     this.dungeonCleared = true;
     this.progression.addRiftClear();
-    this.progression.addXP(150, 'rift_clear');
-    this._showAnnouncement('RIFT CLEARED! +150 XP');
+    const xp = 150 * this.dungeonTier;
+    this.progression.addXP(xp, 'rift_clear');
+    this._showAnnouncement(`RIFT CLEARED! +${xp} XP`);
     this.emitEvent(createEvent(EventType.RIFT_EXIT, this.player.id, { tier: this.dungeonTier, result: 'cleared' }));
+    // Unlock the next tier (harder waves, better rewards)
+    const maxTier = Math.max(...Object.keys(RIFT_WAVES).map(Number));
+    this.dungeonTier = Math.min(maxTier, this.dungeonTier + 1);
     setTimeout(() => this.exitRift(), 3000);
   }
 
