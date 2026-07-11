@@ -15,6 +15,7 @@ export const EventType = Object.freeze({
   ATTACK_HIT:     'attack:hit',
   ATTACK_MISS:    'attack:miss',
   DAMAGE_TAKEN:   'damage:taken',
+  KILL:           'combat:kill',
   DEATH:          'death',
   RESPAWN:        'respawn',
 
@@ -36,6 +37,11 @@ export const EventType = Object.freeze({
   RIFT_ENTER:     'rift:enter',
   RIFT_EXIT:      'rift:exit',
 
+  // -- SDK observations
+  RESOURCE_CHANGE: 'resource:change',
+  STATE_SAMPLE:    'state:sample',
+  PATH_SAMPLE:     'path:sample',
+
   // -- Bugs / Reports
   BUG_REPORT:     'bug:report',
 
@@ -48,6 +54,9 @@ export const EventType = Object.freeze({
   AB_RESULT:        'agent:ab:result',
   DATA_EXPORT:      'agent:data:export',
 });
+
+/** Version of the normalized event envelope emitted by the SDK. */
+export const TELEMETRY_SCHEMA_VERSION = '1.0.0';
 
 /**
  * @typedef {Object} GameEvent

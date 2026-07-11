@@ -36,6 +36,8 @@ export class InventorySystem {
   useItem(itemId) {
     const item = ITEMS[itemId];
     if (!item) return false;
+    const hpBefore = this.player.stats.hp;
+    const mpBefore = this.player.stats.mp;
     if (item.heal) {
       this.player.stats.hp = Math.min(this.player.stats.maxHp, this.player.stats.hp + item.heal);
     }
@@ -43,7 +45,10 @@ export class InventorySystem {
       this.player.stats.mp = Math.min(this.player.stats.maxMp, this.player.stats.mp + item.mana);
     }
     this.removeItem(itemId);
-    this.emitEvent(createEvent(EventType.ITEM_USE, this.player.id, { itemId }));
+    this.emitEvent(createEvent(EventType.ITEM_USE, this.player.id, {
+      actorId: this.player.id, actorType: 'player', sourceType: 'item', sourceId: itemId,
+      itemId, hpBefore, hpAfter: this.player.stats.hp, mpBefore, mpAfter: this.player.stats.mp,
+    }));
     return true;
   }
 
@@ -53,6 +58,7 @@ export class InventorySystem {
     // Unequip current
     if (this.equipped.mainHand) this._unequipWeapon(this.equipped.mainHand);
     this.equipped.mainHand = weaponId;
+    this.player.equippedWeaponId = weaponId;
     this.player.stats.damage += w.damage || 0;
     if (w.speed) this.player.stats.speed = (this.player.stats.speed || 3) + w.speed;
     if (w.maxMp) { this.player.stats.maxMp += w.maxMp; this.player.stats.mp += w.maxMp; }
@@ -65,6 +71,7 @@ export class InventorySystem {
     this.player.stats.damage -= w.damage || 0;
     if (w.speed) this.player.stats.speed -= w.speed;
     if (w.maxMp) { this.player.stats.maxMp -= w.maxMp; }
+    this.player.equippedWeaponId = null;
     this.addItem(weaponId);
   }
 

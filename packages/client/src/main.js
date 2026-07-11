@@ -61,12 +61,16 @@ async function initGame(classId = 'warrior') {
 
   // ---- Init Systems ----
   const playerId = 'player_' + Math.random().toString(36).slice(2, 8);
-  const telemetry = new TelemetrySystem();
+  const telemetry = new TelemetrySystem({
+    playerId,
+    patchId: 'v0.1.0',
+    gameVersion: '0.1.0',
+  });
   const abTesting = new ABTestingSystem(playerId);
   const dataLog = new DataLoggingSystem();
 
-  telemetry.connect('ws://localhost:3001/ws/telemetry');
-  dataLog.connect('ws://localhost:3001/ws/data');
+  telemetry.connect('ws://localhost:3001/ws?channel=telemetry');
+  dataLog.connect('ws://localhost:3001/ws?channel=data');
 
   let progressionSystem = null;
   function emitEvent(event) {
@@ -166,6 +170,7 @@ async function initGame(classId = 'warrior') {
   });
   world.addEntity(playerEntity);
   camera.container.addChild(playerSprite);
+  telemetry.bindPlayer(playerEntity);
 
   // ---- Init Game Systems ----
   progressionSystem = new ProgressionSystem(playerEntity, emitEvent);
@@ -466,6 +471,10 @@ async function initGame(classId = 'warrior') {
     lighting.update(playerScreen.x, playerScreen.y);
 
     // Telemetry tick
+    telemetry.observePlayerState(playerEntity, {
+      area: riftSystem.inDungeon ? `rift_tier_${riftSystem.dungeonTier}` : 'seed_garden',
+      classId,
+    });
     telemetry.tick();
 
     // Update enemy health bars
@@ -511,6 +520,17 @@ async function initGame(classId = 'warrior') {
     dataLog.flush();
     telemetry.flush();
   }, 5000);
+
+  window.addEventListener('beforeunload', () => {
+    emitEvent(createEvent(EventType.SESSION_END, playerEntity.id, {
+      actorId: playerEntity.id,
+      actorType: 'player',
+      durationMs: Date.now() - telemetry.sessionStartedAt,
+      kills: telemetry.outcomes.kills,
+      deaths: telemetry.outcomes.playerDeaths,
+    }));
+    telemetry.flush();
+  });
 
   console.log('[RiftSEED] Game initialized. WASD=move, click=move/attack, QWER=skills, F=interact, I=inventory, Tab=agents, P=shop');
 }

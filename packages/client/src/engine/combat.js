@@ -32,18 +32,35 @@ export function meleeAttack(attacker, target, emitEvent) {
 
   const isCrit = Math.random() < 0.15;
   const damage = isCrit ? Math.floor(baseDamage * 1.8) : baseDamage;
+  const hpBefore = target.stats?.hp ?? 0;
   const killed = applyDamage(target, damage);
+  const actorType = getEntityType(attacker);
+  const targetType = getEntityType(target);
+  const sourceId = attacker.equippedWeaponId || attacker.weaponId || 'basic_attack';
 
   emitEvent(createEvent(EventType.ATTACK_HIT, attacker.id, {
-    attackerId: attacker.id, targetId: target.id,
-    damage, isCritical: isCrit, targetHpRemaining: target.stats.hp,
+    actorId: attacker.id, actorType, attackerId: attacker.id,
+    targetId: target.id, targetType, targetEnemyType: target.enemyType,
+    sourceType: actorType === 'player' ? 'weapon' : 'enemy', sourceId,
+    enemyType: attacker.enemyType,
+    damage, isCritical: isCrit, hpBefore, hpAfter: target.stats.hp,
+    targetHpRemaining: target.stats.hp,
   }));
 
-  if (killed) {
-    emitEvent(createEvent(EventType.DEATH, target.id, { killerId: attacker.id, victimId: target.id }));
+  if (targetType === 'player') {
+    emitEvent(createEvent(EventType.DAMAGE_TAKEN, target.id, {
+      actorId: target.id, actorType: 'player', targetId: target.id, targetType: 'player',
+      sourceType: 'enemy', sourceId: attacker.enemyType || attacker.name || String(attacker.id),
+      enemyType: attacker.enemyType || 'unknown', attackerId: attacker.id,
+      damage, hpBefore, hpAfter: target.stats.hp,
+    }));
   }
 
-  return { hit: true, damage, killed };
+  if (killed) {
+    emitCombatOutcome(attacker, target, sourceId, emitEvent);
+  }
+
+  return { hit: true, damage, killed, isCrit };
 }
 
 /**
@@ -62,16 +79,20 @@ export function useSkill(attacker, skillId, target, targetPos, emitEvent, world)
   if (mp < skill.manaCost) return { success: false, result: { reason: 'no_mana' } };
 
   // Deduct mana
+  const mpBefore = mp;
   if (attacker.stats) attacker.stats.mp -= skill.manaCost;
   else if (attacker.mp !== undefined) attacker.mp -= skill.manaCost;
+  const mpAfter = attacker.stats?.mp ?? attacker.mp ?? 0;
 
   // Set cooldown
   if (!attacker.skillCooldowns) attacker.skillCooldowns = {};
   attacker.skillCooldowns[skillId] = now + skill.cooldownMs;
 
   emitEvent(createEvent(EventType.SKILL_USE, attacker.id, {
+    actorId: attacker.id, actorType: getEntityType(attacker), sourceType: 'skill', sourceId: skillId,
     skillId, cooldownMs: skill.cooldownMs, manaCost: skill.manaCost,
-    targetId: target?.id, targetPos,
+    targetId: target?.id, targetType: target ? getEntityType(target) : 'none', targetPos,
+    mpBefore, mpAfter,
   }));
 
   let result = {};
@@ -88,11 +109,14 @@ export function useSkill(attacker, skillId, target, targetPos, emitEvent, world)
         const dmgBuff = effects.find(e => e.type === 'damage_buff');
         if (dmgBuff) dmg = Math.floor(dmg * (1 + dmgBuff.amount));
 
+        const hpBefore = target.stats?.hp ?? 0;
         const killed = applyDamage(target, dmg);
         result = { hit: true, damage: dmg, killed };
 
         emitEvent(createEvent(EventType.SKILL_HIT, attacker.id, {
-          skillId, targetId: target.id, damage: dmg, targetHpRemaining: target.stats.hp,
+          actorId: attacker.id, actorType: getEntityType(attacker), sourceType: 'skill', sourceId: skillId,
+          skillId, targetId: target.id, targetType: getEntityType(target), targetEnemyType: target.enemyType,
+          damage: dmg, hpBefore, hpAfter: target.stats.hp, targetHpRemaining: target.stats.hp,
         }));
 
         // === ICE SHARD: Slow target ===
@@ -131,7 +155,7 @@ export function useSkill(attacker, skillId, target, targetPos, emitEvent, world)
         }
 
         if (killed) {
-          emitEvent(createEvent(EventType.DEATH, target.id, { killerId: attacker.id }));
+          emitCombatOutcome(attacker, target, skillId, emitEvent, 'skill');
         }
       } else {
         result = { hit: false, reason: 'out_of_range' };
@@ -146,11 +170,15 @@ export function useSkill(attacker, skillId, target, targetPos, emitEvent, world)
       if (entity.stats.hp <= 0) continue;
       const dist = tileDistance(attacker.pos, entity.pos);
       if (dist <= skill.range) {
+        const hpBefore = entity.stats?.hp ?? 0;
         const killed = applyDamage(entity, skill.damage);
         hits.push({ id: entity.id, damage: skill.damage, killed });
         emitEvent(createEvent(EventType.SKILL_HIT, attacker.id, {
-          skillId, targetId: entity.id, damage: skill.damage,
+          actorId: attacker.id, actorType: getEntityType(attacker), sourceType: 'skill', sourceId: skillId,
+          skillId, targetId: entity.id, targetType: getEntityType(entity), targetEnemyType: entity.enemyType,
+          damage: skill.damage, hpBefore, hpAfter: entity.stats.hp,
         }));
+        if (killed) emitCombatOutcome(attacker, entity, skillId, emitEvent, 'skill');
       }
     }
     result = { hit: true, hits, aoe: true };
@@ -159,9 +187,14 @@ export function useSkill(attacker, skillId, target, targetPos, emitEvent, world)
   // ===== HEAL =====
   else if (skill.type === 'self' && skill.healAmount) {
     const healTarget = attacker;
+    const hpBefore = healTarget.stats.hp;
     const healed = Math.min(skill.healAmount, healTarget.stats.maxHp - healTarget.stats.hp);
     healTarget.stats.hp += healed;
     result = { healed };
+    emitEvent(createEvent(EventType.RESOURCE_CHANGE, attacker.id, {
+      actorId: attacker.id, actorType: getEntityType(attacker), sourceType: 'skill', sourceId: skillId,
+      resource: 'hp', delta: healed, hpBefore, hpAfter: healTarget.stats.hp,
+    }));
   }
 
   // ===== WAR CRY: Damage buff =====
@@ -192,6 +225,34 @@ export function useSkill(attacker, skillId, target, targetPos, emitEvent, world)
   }
 
   return { success: true, result };
+}
+
+function getEntityType(entity) {
+  if (entity?.isPlayer) return 'player';
+  if (entity?.isEnemy) return 'enemy';
+  return 'unknown';
+}
+
+function emitCombatOutcome(attacker, victim, sourceId, emitEvent, sourceType = null) {
+  const killerType = getEntityType(attacker);
+  const victimType = getEntityType(victim);
+  const payload = {
+    actorId: attacker.id,
+    actorType: killerType,
+    killerId: attacker.id,
+    killerType,
+    victimId: victim.id,
+    victimType,
+    targetId: victim.id,
+    targetType: victimType,
+    enemyType: victim.enemyType,
+    sourceType: sourceType || (killerType === 'player' ? 'weapon' : 'enemy'),
+    sourceId,
+  };
+  if (killerType === 'player' && victimType === 'enemy') {
+    emitEvent(createEvent(EventType.KILL, attacker.id, payload));
+  }
+  emitEvent(createEvent(EventType.DEATH, victim.id, payload));
 }
 
 /**
