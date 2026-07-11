@@ -29,7 +29,7 @@ export function showTitleScreen(onStart) {
         <div style="font-size:16px;color:#e8ff47;animation:blink 1.5s infinite;">Press ENTER to Begin</div>
         <div style="margin-top:20px;color:#555;font-size:11px;line-height:2.2;">
           <div>WASD — Move &nbsp;|&nbsp; Click — Move/Attack &nbsp;|&nbsp; Q — Shadow Strike</div>
-          <div>W — Rift Slash &nbsp;|&nbsp; E — Seed Heal &nbsp;|&nbsp; R — Rift Teleport</div>
+          <div>E — Rift Slash &nbsp;|&nbsp; R — Seed Heal &nbsp;|&nbsp; T — Rift Teleport</div>
           <div>F — Interact &nbsp;|&nbsp; I — Inventory &nbsp;|&nbsp; Tab — Agent Panel</div>
           <div>1/2/3 — Use Items &nbsp;|&nbsp; P — Purchase UI &nbsp;|&nbsp; Shift+P — Auto Demo</div>
         </div>

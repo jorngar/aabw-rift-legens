@@ -5,13 +5,17 @@ import { EventType, createEvent } from '@shared/events.js';
 import { ENEMIES } from '@shared/config.js';
 import { meleeAttack, combatTick, hasEffect } from '../engine/combat.js';
 import { tileDistance, getDirection, tileToScreen } from '../engine/isometric.js';
+import { triggerAttackAnimation } from './animationSystem.js';
 
 /**
  * Movement system: simple direct movement toward target.
  */
 export function movementSystem(world, dt, emitEvent) {
   for (const entity of world.query('pos', 'stats')) {
-    if (!entity.targetPos) { entity.isMoving = false; continue; }
+    if (!entity.targetPos) {
+      if (!entity.manualMovement) entity.isMoving = false;
+      continue;
+    }
 
     const dx = entity.targetPos.x - entity.pos.x;
     const dy = entity.targetPos.y - entity.pos.y;
@@ -37,19 +41,10 @@ export function movementSystem(world, dt, emitEvent) {
  * Sprite sync system: updates positions, facing direction, idle bobbing.
  */
 export function spriteSyncSystem(world, dt) {
-  const time = Date.now() / 1000;
   for (const entity of world.query('pos', 'sprite')) {
     const screenPos = tileToScreen(entity.pos.x, entity.pos.y);
     entity.sprite.x = screenPos.x;
-
-    // Idle bobbing: subtle up/down when not moving
-    if (!entity.isMoving) {
-      const bobSpeed = entity.isPlayer ? 2.5 : 2.0;
-      const bobAmount = entity.isPlayer ? 2 : 1.5;
-      entity.sprite.y = screenPos.y + Math.sin(time * bobSpeed + entity.id) * bobAmount;
-    } else {
-      entity.sprite.y = screenPos.y;
-    }
+    entity.sprite.y = screenPos.y;
 
     // Facing direction: flip sprite based on movement direction
     if (entity.direction) {
@@ -61,14 +56,16 @@ export function spriteSyncSystem(world, dt) {
     }
 
     // Visual effect indicators
-    if (hasEffect(entity.id, 'slow')) {
+    if ((entity.hitReactUntil || 0) > Date.now()) {
+      entity.sprite.tint = 0xff7777;
+    } else if (hasEffect(entity.id, 'slow')) {
       entity.sprite.tint = 0x8888ff; // blue tint for slowed
     } else if (hasEffect(entity.id, 'stun')) {
       entity.sprite.tint = 0xffff00; // yellow tint for stunned
     } else if (hasEffect(entity.id, 'dot')) {
       entity.sprite.tint = 0x88ff88; // green tint for poisoned
-    } else if (entity.isPlayer) {
-      entity.sprite.tint = 0xffffff; // normal
+    } else {
+      entity.sprite.tint = 0xffffff;
     }
   }
 }
@@ -128,8 +125,7 @@ export function enemyAISystem(world, dt, emitEvent) {
         entity.path = [];
         const result = meleeAttack(entity, player, emitEvent);
         if (result.hit) {
-          entity.isAttacking = true;
-          setTimeout(() => { entity.isAttacking = false; }, 300);
+          triggerAttackAnimation(entity);
         }
         break;
     }

@@ -31,13 +31,26 @@ import { LightingSystem } from './ui/lighting.js';
 import { addGardenProps } from './ui/gardenProps.js';
 import { updateEnemyHealthBars } from './ui/enemyHealthBars.js';
 import { DemoRunner } from './demo/scenarioRunner.js';
+import {
+  animationSystem,
+  createStatefulSprite,
+  enemyAnimationProfile,
+  PLAYER_ANIMATION_PROFILE,
+  setEntityAnimation,
+  triggerAttackAnimation,
+} from './systems/animationSystem.js';
 
 // ---- Bootstrap ----
-showTitleScreen(() => {
-  showClassSelection((classId) => {
-    initGame(classId);
+const debugClass = new URLSearchParams(window.location.search).get('autostart');
+if (debugClass) {
+  initGame(debugClass);
+} else {
+  showTitleScreen(() => {
+    showClassSelection((classId) => {
+      initGame(classId);
+    });
   });
-});
+}
 
 async function initGame(classId = 'warrior') {
   const classConfig = getClassConfig(classId);
@@ -48,6 +61,7 @@ async function initGame(classId = 'warrior') {
   const app = new PIXI.Application({
     background: '#1a1525',
     antialias: true,
+    preserveDrawingBuffer: true,
     resizeTo: container,
     width: CLIENT.CANVAS_WIDTH,
     height: CLIENT.CANVAS_HEIGHT,
@@ -104,19 +118,12 @@ async function initGame(classId = 'warrior') {
   camera.container.x = app.screen.width / 2 - startScreen.x;
   camera.container.y = app.screen.height / 2 - startScreen.y;
 
-  // ---- Create Player (class-specific sprite) ----
-  // Map classes to visually different Flare RPG sprites
-  const classSpriteMap = {
-    warrior: 'heroHeavy',   // heavy armor warrior
-    mage: 'magician',       // mage with robes
-    rogue: 'hero',          // light armor warrior
-    ranger: 'hero',         // light armor (tinted differently)
-  };
-  const spriteKey = classSpriteMap[classId] || 'hero';
-  const playerSprite = assets.anim(spriteKey, 'frame_', 8, true);
-  playerSprite.anchor.set(0.5, 0.85);
-  playerSprite.scale.set(0.4); // Flare sprites are 256x256
-  playerSprite.tint = 0xffffff;
+  // ---- Create Player — explicit idle / move / attack states ----
+  const playerVisual = createStatefulSprite(assets, PLAYER_ANIMATION_PROFILE, {
+    scale: 0.18,
+    anchorY: 0.88,
+  });
+  const playerSprite = playerVisual.sprite;
 
   // Class-specific color overlay (HTML div behind sprite)
   const classColors = { warrior: '#ffffff', mage: '#aaddff', rogue: '#aaffaa', ranger: '#ffddaa' };
@@ -167,8 +174,8 @@ async function initGame(classId = 'warrior') {
     },
     skillCooldowns: {},
     sprite: playerSprite,
-    walkAnim: Object.values(assets.sheets[spriteKey].textures).sort(),
-    idleAnim: Object.values(assets.sheets[spriteKey].textures).sort().slice(0, 8),
+    animations: playerVisual.animations,
+    animationState: 'idle',
   });
   world.addEntity(playerEntity);
   camera.container.addChild(playerSprite);
@@ -198,6 +205,8 @@ async function initGame(classId = 'warrior') {
   const merchantSprite = assets.anim('magician', 'frame_', 6, true);
   merchantSprite.anchor.set(0.5, 0.8);
   merchantSprite.scale.set(0.65);
+  merchantSprite.stop();
+  merchantSprite.gotoAndStop(0);
   const merchantPos = { x: 4, y: 6 };
   const mScreen = tileToScreen(merchantPos.x, merchantPos.y);
   merchantSprite.x = mScreen.x;
@@ -219,11 +228,12 @@ async function initGame(classId = 'warrior') {
   // ---- Spawn Enemies ----
   function spawnEnemy(type, x, y) {
     const def = ENEMIES[type];
-    const sheetKey = type === 'shadowBeast' ? 'skeleton' : 'ogre';
-    const sprite = assets.anim(sheetKey, 'frame_', 8, true);
-    sprite.anchor.set(0.5, 0.8);
-    sprite.scale.set(0.7); // larger enemies
-    sprite.tint = 0xffffff; // full brightness for visibility
+    const sheetKey = type === 'shadowBeast' ? 'werewolf' : 'heroHeavy';
+    const visual = createStatefulSprite(assets, enemyAnimationProfile(sheetKey), {
+      scale: type === 'riftKnight' ? 1.05 : 0.9,
+      anchorY: 0.82,
+    });
+    const sprite = visual.sprite;
 
     const entity = createEntity({
       isEnemy: true, enemyType: type, name: def.name,
@@ -233,14 +243,40 @@ async function initGame(classId = 'warrior') {
       attackCooldownMs: def.attackCooldownMs, attackRange: def.attackRange,
       stats: { hp: def.hp, maxHp: def.hp, damage: def.damage, speed: def.speed },
       sprite,
+      animations: visual.animations,
+      animationState: 'idle',
       hasShadow: true,
-      walkAnim: Object.values(assets.sheets[sheetKey].textures).sort(),
-      idleAnim: Object.values(assets.sheets[sheetKey].textures).sort().slice(0, 4),
     });
 
     world.addEntity(entity);
     camera.container.addChild(sprite);
     return entity;
+  }
+
+  function handleEnemyDefeated(target) {
+    if (!target || target.isDying) return;
+    target.isDying = true;
+    target.aiState = 'dead';
+    target.targetPos = null;
+    target.path = [];
+    setEntityAnimation(target, 'death', true);
+
+    const screen = tileToScreen(target.pos.x, target.pos.y);
+    const sx = screen.x + camera.container.x;
+    const sy = screen.y + camera.container.y - 30;
+    const drops = GOLD_DROPS[target.enemyType] || { min: 5, max: 15 };
+    const gold = drops.min + Math.floor(Math.random() * (drops.max - drops.min + 1));
+    progressionSystem.addGold(gold);
+    inventorySystem.gold = progressionSystem.gold;
+    progressionSystem.addKill(target.enemyType);
+    progressionSystem.addXP(target.enemyType === 'riftKnight' ? 100 : 25, 'kill');
+    showGoldDrop(sx, sy - 20, gold);
+
+    setTimeout(() => {
+      if (target.sprite) target.sprite.alpha = 0;
+      if (target.sprite?.parent) target.sprite.parent.removeChild(target.sprite);
+      world.removeEntity(target.id);
+    }, 520);
   }
 
   if (!riftSystem.inDungeon) {
@@ -270,8 +306,21 @@ async function initGame(classId = 'warrior') {
       const result = useSkill(attacker, skillId, target, targetPos, emit, world);
       if (result.success) {
         progressionSystem.addSkillUse();
-        const ps = tileToScreen(playerEntity.pos.x, playerEntity.pos.y);
-        showSkillEffect(skillId, ps.x + camera.container.x, ps.y + camera.container.y - 20);
+        triggerAttackAnimation(playerEntity);
+        const effectTarget = target && result.result?.hit ? target : playerEntity;
+        const ps = tileToScreen(effectTarget.pos.x, effectTarget.pos.y);
+        const sx = ps.x + camera.container.x;
+        const sy = ps.y + camera.container.y - 30;
+        showSkillEffect(skillId, sx, sy);
+        if (result.result?.damage) showDamageHit(sx, sy, result.result.damage, false);
+        if (result.result?.killed && target) handleEnemyDefeated(target);
+        for (const hit of result.result?.hits || []) {
+          const enemy = world.getEntity(hit.id);
+          if (!enemy) continue;
+          const hitPos = tileToScreen(enemy.pos.x, enemy.pos.y);
+          showDamageHit(hitPos.x + camera.container.x, hitPos.y + camera.container.y - 30, hit.damage, false);
+          if (hit.killed) handleEnemyDefeated(enemy);
+        }
       }
       return result;
     },
@@ -412,6 +461,7 @@ async function initGame(classId = 'warrior') {
           playerEntity.path = [];
           const result = meleeAttack(playerEntity, target, emitEvent);
           if (result.hit) {
+            triggerAttackAnimation(playerEntity);
             const screen = tileToScreen(target.pos.x, target.pos.y);
             const sx = screen.x + camera.container.x;
             const sy = screen.y + camera.container.y - 30;
@@ -419,15 +469,7 @@ async function initGame(classId = 'warrior') {
             if (result.isCrit) screenShake(4, 150);
             if (result.killed) {
               playerEntity.attackTarget = null;
-              const drops = GOLD_DROPS[target.enemyType] || { min: 5, max: 15 };
-              const gold = drops.min + Math.floor(Math.random() * (drops.max - drops.min));
-              progressionSystem.addGold(gold);
-              inventorySystem.gold = progressionSystem.gold;
-              showGoldDrop(sx, sy - 20, gold);
-              progressionSystem.addKill(target.enemyType);
-              progressionSystem.addXP(target.enemyType === 'riftKnight' ? 100 : 25, 'kill');
-              if (target.sprite?.parent) target.sprite.parent.removeChild(target.sprite);
-              world.removeEntity(target.id);
+              handleEnemyDefeated(target);
             }
           }
         }
@@ -442,6 +484,7 @@ async function initGame(classId = 'warrior') {
 
     // WASD movement
     const { dx, dy } = getMovementInput();
+    playerEntity.manualMovement = dx !== 0 || dy !== 0;
     if (dx !== 0 || dy !== 0) {
       const speed = (playerEntity.stats.speed || 3) * 0.05;
       playerEntity.pos.x += dx * speed;
@@ -456,6 +499,7 @@ async function initGame(classId = 'warrior') {
     // Run systems
     movementSystem(world, dt, emitEvent);
     enemyAISystem(world, dt, emitEvent);
+    animationSystem(world);
     spriteSyncSystem(world, dt);
     depthSortSystem(world, dt);
     playerCombatSystem(world, dt);
@@ -537,6 +581,45 @@ async function initGame(classId = 'warrior') {
     }));
     telemetry.flush();
   });
+
+  // Deterministic hooks used by the web-game play-test client.
+  window.render_game_to_text = () => JSON.stringify({
+    coordinateSystem: 'tile grid; origin top-left; +x right; +y down',
+    mode: riftSystem.inDungeon ? `rift_tier_${riftSystem.dungeonTier}` : 'seed_garden',
+    player: {
+      x: Number(playerEntity.pos.x.toFixed(2)),
+      y: Number(playerEntity.pos.y.toFixed(2)),
+      hp: Number(playerEntity.stats.hp.toFixed(1)),
+      maxHp: playerEntity.stats.maxHp,
+      mp: Number(playerEntity.stats.mp.toFixed(1)),
+      animation: playerEntity.animationState,
+      moving: playerEntity.isMoving,
+      attacking: Boolean(playerEntity.isAttacking),
+      targetId: playerEntity.attackTarget?.id || null,
+    },
+    enemies: world.query('isEnemy', 'pos', 'stats').filter(enemy => enemy.stats.hp > 0).map(enemy => ({
+      id: enemy.id,
+      type: enemy.enemyType,
+      x: Number(enemy.pos.x.toFixed(2)),
+      y: Number(enemy.pos.y.toFixed(2)),
+      hp: Number(enemy.stats.hp.toFixed(1)),
+      animation: enemy.animationState,
+      ai: enemy.aiState,
+    })),
+    progression: {
+      kills: progressionSystem.kills,
+      level: progressionSystem.level,
+      gold: progressionSystem.gold,
+    },
+    controls: 'WASD/arrows move; click enemy attacks; Q/E/R/T skills; F interact; Tab telemetry',
+  });
+
+  window.advanceTime = async (ms) => {
+    const steps = Math.max(1, Math.ceil(ms / (1000 / 60)));
+    for (let i = 0; i < steps; i++) {
+      app.ticker.update(app.ticker.lastTime + 1000 / 60);
+    }
+  };
 
   console.log('[RiftSEED] Game initialized. WASD=move, click=move/attack, QWER=skills, F=interact, I=inventory, Tab=agents, P=shop');
 }
