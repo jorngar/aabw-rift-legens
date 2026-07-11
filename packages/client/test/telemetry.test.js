@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { TelemetrySystem } from '../src/systems/telemetry.js';
+import { TelemetrySystem } from '../src/infrastructure/analytics/telemetry.js';
 import { EventType } from '../../shared/src/events.js';
 
 test('attributes weapon, skill, and enemy damage without mixing actors', () => {

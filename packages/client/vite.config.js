@@ -1,18 +1,8 @@
 import { defineConfig } from 'vite';
-import { resolve, dirname } from 'path';
-import { fileURLToPath } from 'url';
-
-const __dirname = dirname(fileURLToPath(import.meta.url));
 
 export default defineConfig({
   root: '.',
-  publicDir: resolve(__dirname, '../../game-assets'),
-  resolve: {
-    alias: {
-      '@shared': resolve(__dirname, '../shared/src'),
-      '@assets': resolve(__dirname, '../../game-assets'),
-    },
-  },
+  publicDir: 'public',
   server: {
     port: 5173,
     proxy: {

@@ -1,6 +1,11 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { animationSystem, setEntityAnimation, triggerAttackAnimation } from '../src/systems/animationSystem.js';
+import {
+  animationSystem,
+  playerAnimationProfile,
+  setEntityAnimation,
+  triggerAttackAnimation,
+} from '../src/game/systems/animation-system.js';
 
 function fakeEntity() {
   const sprite = {
@@ -68,5 +73,21 @@ test('death animation takes priority over movement and attacks', () => {
   entity.isAttacking = true;
   animationSystem({ query: () => [entity] });
   assert.equal(entity.animationState, 'death');
+  assert.equal(entity.sprite.loop, false);
+});
+
+test('warrior selects the complete soldier animation pack', () => {
+  const profile = playerAnimationProfile('warrior');
+  assert.equal(profile.idle.sheet, 'soldierIdle');
+  assert.equal(profile.walk.sheet, 'soldierWalk');
+  assert.equal(profile.attack.sheet, 'soldierAttack');
+  assert.equal(profile.hit.sheet, 'soldierHurt');
+  assert.equal(profile.death.sheet, 'soldierDeath');
+});
+
+test('hurt reactions play their available frames once', () => {
+  const entity = fakeEntity();
+  setEntityAnimation(entity, 'hit', true);
+  assert.equal(entity.sprite.played, true);
   assert.equal(entity.sprite.loop, false);
 });

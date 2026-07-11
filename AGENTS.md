@@ -148,18 +148,18 @@ A humanoid robot observing a human playing this game could learn:
 
 ## Client-Side Collection
 
-### TelemetrySystem (`packages/client/src/systems/telemetry.js`)
+### TelemetrySystem (`packages/client/src/infrastructure/analytics/telemetry.js`)
 - Buffers events locally (2s flush interval)
 - Maintains per-metric counters
 - Connects to server via WebSocket
 - Falls back to local-only if server unavailable
 
-### ABTestingSystem (`packages/client/src/systems/ab-testing.js`)
+### ABTestingSystem (`packages/client/src/infrastructure/analytics/ab-testing.js`)
 - Deterministic cohort assignment (hash player ID + test ID)
 - Overrides game config values based on assigned variant
 - Records exposure events
 
-### DataLoggingSystem (`packages/client/src/systems/data-logging.js`)
+### DataLoggingSystem (`packages/client/src/infrastructure/analytics/data-logging.js`)
 - Captures all game events with spatial data
 - Infers decision context from event sequences
 - Exports CSV and JSON locally

@@ -82,79 +82,28 @@ Open http://localhost:5173 in your browser.
 rift-seed/
 ├── packages/
 │   ├── client/                    # PixiJS game client (Vite)
-│   │   ├── src/
-│   │   │   ├── main.js           # Game entry point, game loop
-│   │   │   ├── riftAssets.js     # Sprite sheet loader
-│   │   │   ├── input.js          # Keyboard/mouse input handler
-│   │   │   ├── engine/
-│   │   │   │   ├── isometric.js  # Coordinate system, camera
-│   │   │   │   ├── tilemap.js    # Procedural tile renderer
-│   │   │   │   ├── ecs.js        # Entity-Component-System
-│   │   │   │   ├── combat.js     # Damage calc, skills, hit detection
-│   │   │   │   └── pathfinding.js # A* on isometric grid
-│   │   │   ├── systems/
-│   │   │   │   ├── gameSystems.js    # Movement, sprite sync, enemy AI
-│   │   │   │   ├── telemetry.js      # Client-side event tracking
-│   │   │   │   ├── ab-testing.js     # Feature flag / cohort system
-│   │   │   │   ├── data-logging.js   # Raw event capture
-│   │   │   │   ├── progression.js    # XP, levels, SEED rank, gold
-│   │   │   │   ├── riftSystem.js     # Portal, dungeon instances, waves
-│   │   │   │   └── inventorySystem.js # Items, equipment
-│   │   │   ├── ui/
-│   │   │   │   ├── titleScreen.js    # Animated title + story intro
-│   │   │   │   ├── agentPanel.js     # 3-tab agent dashboard
-│   │   │   │   ├── shopUI.js         # Buy/sell/weapons shop
-│   │   │   │   ├── purchaseUI.js     # Simulated IAP modal
-│   │   │   │   ├── minimap.js        # Terrain-colored minimap
-│   │   │   │   ├── screenEffects.js  # Shake, flash, overlays
-│   │   │   │   ├── skillVFX.js       # Skill burst effects, damage numbers
-│   │   │   │   ├── enemyHealthBars.js # Floating HP bars
-│   │   │   │   ├── lighting.js       # Player light source, vignette
-│   │   │   │   └── portalEffect.js   # Animated CSS portal
-│   │   │   └── demo/
-│   │   │       └── scenarioRunner.js # Auto-demo walkthrough
-│   │   ├── index.html            # Game HTML (HUD, skill bar, item bar)
-│   │   └── vite.config.js
+│   │   ├── public/assets/         # Runtime-only sprites, atlases, video, licenses
+│   │   └── src/
+│   │       ├── app/demo/          # Scripted hackathon demo
+│   │       ├── game/core/         # Model: ECS, combat, map, projection
+│   │       ├── game/controllers/  # Controller: keyboard/pointer intent
+│   │       ├── game/systems/      # Controller: AI, animation, progression
+│   │       ├── infrastructure/    # Asset and analytics adapters
+│   │       ├── presentation/      # View: screens, HUD, effects
+│   │       └── main.js            # Composition root and game loop
 │   │
 │   ├── server/                    # Express + WebSocket backend
+│   │   ├── public/dashboard/      # Static telemetry dashboard
 │   │   ├── src/
-│   │   │   ├── server.js         # HTTP + WS server, API routes
-│   │   │   └── agents/
-│   │   │       ├── telemetry-agent.js    # Patch impact analysis
-│   │   │       ├── ab-testing-agent.js   # Statistical significance
-│   │   │       └── data-cleaning-agent.js # Robotics CSV export
-│   │   └── package.json
+│   │   │   ├── agents/            # Telemetry, A/B, cleaning, Hermes
+│   │   │   └── server.js          # HTTP + WS server, API routes
+│   │   └── test/
 │   │
 │   └── shared/                    # Shared constants & event schema
-│       ├── src/
-│       │   ├── events.js         # Event taxonomy (30 types)
-│       │   ├── config.js         # Balance params, items, ranks
-│       │   └── index.js          # Barrel export
-│       └── package.json
+│       └── src/                    # Events, balance, package exports
 │
-├── game-assets/                   # Sprite sheets, atlases, scripts
-│   ├── sheets/                    # Sprite sheet PNGs
-│   │   ├── chibi/                # Anime chibi player (CC0)
-│   │   ├── skeleton.png          # Flare RPG enemies (CC-BY 3.0)
-│   │   ├── ogre.png
-│   │   └── ...
-│   ├── atlases/                   # PixiJS Spritesheet JSONs
-│   ├── scripts/                   # Asset processing scripts
-│   │   ├── riftAssets.js         # (legacy copy, main is in client/src)
-│   │   ├── convert_chibi.py      # Chibi sprite → PixiJS atlas
-│   │   ├── convert_flare.py      # Flare sprites → PixiJS atlas
-│   │   ├── chroma_key.py         # Remove dark backgrounds
-│   │   └── brighten_assets.py    # Brighten tile sheets
-│   └── README.md                 # Asset documentation
-│
-├── docs/
-│   └── PRODUCTION_SPEC.md        # Detailed game design spec
-│
-├── AGENTS.md                     # AI agent documentation
-├── pnpm-workspace.yaml           # Monorepo workspace config
-├── tsconfig.base.json            # Shared TypeScript config
-├── package.json                  # Root package with scripts
-└── .gitignore
+├── tools/asset-pipeline/          # Source art, converters, previews, archives
+└── docs/ARCHITECTURE.md           # Boundaries and dependency rules
 ```
 
 ## Architecture
@@ -166,6 +115,8 @@ Three packages share code through workspace dependencies:
 - `@rift-seed/client` — Vite + PixiJS game
 - `@rift-seed/server` — Express + WebSocket backend
 - `@rift-seed/shared` — Event schema, config, types
+
+See [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) for dependency and asset ownership rules.
 
 ### Game Engine
 
@@ -249,17 +200,17 @@ Final Fantasy VIII SEED Garden × Solo Leveling rift/dungeon system. Manhwa/Kore
 ## Development
 
 ### Adding New Enemies
-1. Add sprite sheet to `game-assets/sheets/`
-2. Run `python3 game-assets/scripts/convert_flare.py` (or create atlas JSON manually)
-3. Add entry to `riftAssets.js` SHEETS array
+1. Add source art under `tools/asset-pipeline/`
+2. Export runtime PNG/atlas files to `packages/client/public/assets/`
+3. Register them in `packages/client/src/infrastructure/assets/rift-asset-loader.js`
 4. Add enemy definition to `packages/shared/src/config.js` ENEMIES
 5. Spawn in `packages/client/src/main.js` spawnEnemy()
 
 ### Adding New Skills
 1. Add skill definition to `packages/shared/src/config.js` SKILLS
-2. Add keybinding in `packages/client/src/input.js` skillKeys
+2. Add keybinding in `packages/client/src/game/controllers/input-controller.js` skillKeys
 3. Add skill slot in `packages/client/index.html` skill-bar
-4. Handle in `packages/client/src/engine/combat.js` useSkill()
+4. Handle in `packages/client/src/game/core/combat.js` useSkill()
 
 ### Running the Demo
 1. Start both servers: `pnpm dev:all`

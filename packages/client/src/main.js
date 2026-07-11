@@ -2,43 +2,44 @@
 // main.js — Entry point for Rift SEED Hackathon Demo
 // ============================================================
 import * as PIXI from 'pixi.js';
-import { loadRiftAssets } from './riftAssets.js';
-import { Camera, tileToScreen, tileDistance } from './engine/isometric.js';
-import { renderTileMap, generateGardenMap } from './engine/tilemap.js';
-import { World, createEntity } from './engine/ecs.js';
-import { meleeAttack, combatTick, useSkill } from './engine/combat.js';
-import { movementSystem, spriteSyncSystem, enemyAISystem, depthSortSystem, playerCombatSystem } from './systems/gameSystems.js';
-import { TelemetrySystem } from './systems/telemetry.js';
-import { ABTestingSystem } from './systems/ab-testing.js';
-import { DataLoggingSystem } from './systems/data-logging.js';
-import { ProgressionSystem } from './systems/progression.js';
-import { RiftSystem } from './systems/riftSystem.js';
-import { InventorySystem } from './systems/inventorySystem.js';
-import { setupInput } from './input.js';
-import { EventType, createEvent } from '@shared/events.js';
-import { PLAYER_DEFAULTS, ENEMIES, SKILLS, CLIENT, GOLD_DROPS } from '@shared/config.js';
+import { loadRiftAssets } from './infrastructure/assets/rift-asset-loader.js';
+import { Camera, tileToScreen, tileDistance } from './game/core/isometric.js';
+import { renderTileMap, generateGardenMap } from './game/core/tilemap.js';
+import { World, createEntity } from './game/core/ecs.js';
+import { meleeAttack, combatTick, useSkill } from './game/core/combat.js';
+import { movementSystem, spriteSyncSystem, enemyAISystem, depthSortSystem, playerCombatSystem } from './game/systems/game-systems.js';
+import { TelemetrySystem } from './infrastructure/analytics/telemetry.js';
+import { ABTestingSystem } from './infrastructure/analytics/ab-testing.js';
+import { DataLoggingSystem } from './infrastructure/analytics/data-logging.js';
+import { ProgressionSystem } from './game/systems/progression.js';
+import { RiftSystem } from './game/systems/rift-system.js';
+import { InventorySystem } from './game/systems/inventory-system.js';
+import { setupInput } from './game/controllers/input-controller.js';
+import { EventType, createEvent } from '@rift-seed/shared/events';
+import { PLAYER_DEFAULTS, ENEMIES, SKILLS, CLIENT, GOLD_DROPS } from '@rift-seed/shared/config';
 
 // UI
-import { showTitleScreen } from './ui/titleScreen.js';
-import { showClassSelection, getClassConfig } from './ui/classSelect.js';
-import { AgentPanel } from './ui/agentPanel.js';
-import { ShopUI } from './ui/shopUI.js';
-import { PurchaseSimulator } from './ui/purchaseUI.js';
-import { Minimap } from './ui/minimap.js';
-import { createDamageNumber, screenShake, flashRed, goldenFlash, showVictory, showDefeat } from './ui/screenEffects.js';
-import { showSkillEffect, showDamageHit, showGoldDrop } from './ui/skillVFX.js';
-import { LightingSystem } from './ui/lighting.js';
-import { addGardenProps } from './ui/gardenProps.js';
-import { updateEnemyHealthBars } from './ui/enemyHealthBars.js';
-import { DemoRunner } from './demo/scenarioRunner.js';
+import { showTitleScreen } from './presentation/title-screen.js';
+import { showClassSelection, getClassConfig } from './presentation/class-select.js';
+import { AgentPanel } from './presentation/agent-panel.js';
+import { ShopUI } from './presentation/shop-ui.js';
+import { PurchaseSimulator } from './presentation/purchase-ui.js';
+import { Minimap } from './presentation/minimap.js';
+import { createDamageNumber, screenShake, flashRed, goldenFlash, showVictory, showDefeat } from './presentation/screen-effects.js';
+import { showSkillEffect, showDamageHit, showGoldDrop } from './presentation/skill-vfx.js';
+import { LightingSystem } from './presentation/lighting.js';
+import { addGardenProps } from './presentation/garden-props.js';
+import { updateEnemyHealthBars } from './presentation/enemy-health-bars.js';
+import { DemoRunner } from './app/demo/scenario-runner.js';
 import {
   animationSystem,
   createStatefulSprite,
   enemyAnimationProfile,
-  PLAYER_ANIMATION_PROFILE,
+  playerAnimationProfile,
+  SLIME_ANIMATION_PROFILE,
   setEntityAnimation,
   triggerAttackAnimation,
-} from './systems/animationSystem.js';
+} from './game/systems/animation-system.js';
 
 // ---- Bootstrap ----
 const debugClass = new URLSearchParams(window.location.search).get('autostart');
@@ -119,8 +120,9 @@ async function initGame(classId = 'warrior') {
   camera.container.y = app.screen.height / 2 - startScreen.y;
 
   // ---- Create Player — explicit idle / move / attack states ----
-  const playerVisual = createStatefulSprite(assets, PLAYER_ANIMATION_PROFILE, {
-    scale: 0.18,
+  const usesSoldierSprite = classId === 'warrior';
+  const playerVisual = createStatefulSprite(assets, playerAnimationProfile(classId), {
+    scale: usesSoldierSprite ? 2.2 : 0.18,
     anchorY: 0.88,
   });
   const playerSprite = playerVisual.sprite;
@@ -228,9 +230,9 @@ async function initGame(classId = 'warrior') {
   // ---- Spawn Enemies ----
   function spawnEnemy(type, x, y) {
     const def = ENEMIES[type];
-    const sheetKey = type === 'shadowBeast' ? 'werewolf' : 'heroHeavy';
-    const visual = createStatefulSprite(assets, enemyAnimationProfile(sheetKey), {
-      scale: type === 'riftKnight' ? 1.05 : 0.9,
+    const isShadowSlime = type === 'shadowBeast';
+    const visual = createStatefulSprite(assets, isShadowSlime ? SLIME_ANIMATION_PROFILE : enemyAnimationProfile('heroHeavy'), {
+      scale: isShadowSlime ? 2 : 1.05,
       anchorY: 0.82,
     });
     const sprite = visual.sprite;
@@ -276,12 +278,12 @@ async function initGame(classId = 'warrior') {
       if (target.sprite) target.sprite.alpha = 0;
       if (target.sprite?.parent) target.sprite.parent.removeChild(target.sprite);
       world.removeEntity(target.id);
-    }, 520);
+    }, 820);
   }
 
   if (!riftSystem.inDungeon) {
     // Spawn enemies AWAY from player start (8,8) — safe zone radius of 5
-    spawnEnemy('shadowBeast', 3, 3);     // upper-left corner
+    spawnEnemy('shadowBeast', 3, 3);     // stable ID; presented as Rift Slime
     spawnEnemy('shadowBeast', 14, 4);    // upper-right
     spawnEnemy('shadowBeast', 3, 14);    // lower-left
     spawnEnemy('shadowBeast', 14, 14);   // lower-right
@@ -290,7 +292,7 @@ async function initGame(classId = 'warrior') {
   }
 
   // ---- Portal (animated CSS effect) ----
-  const { createPortal } = await import('./ui/portalEffect.js');
+  const { createPortal } = await import('./presentation/portal-effect.js');
   const portalEl = createPortal();
   const portalPos = { x: 8, y: 3 };
 
@@ -562,14 +564,61 @@ async function initGame(classId = 'warrior') {
       flashRed();
       showDefeat({ waves: riftSystem.currentWave, kills: progressionSystem.kills });
       playerEntity.stats.hp = playerEntity.stats.maxHp; // prevent re-trigger
+      recordMatchToServer(); // persist the run so the dashboard analytics have data
     }
   });
 
-  // Periodic flush
+  // Periodic flush + session stat sync (keeps the dashboard analytics live)
+  let lastMatchSyncAt = Date.now();
   setInterval(() => {
     dataLog.flush();
     telemetry.flush();
+    if (Date.now() - lastMatchSyncAt >= 30000) {
+      lastMatchSyncAt = Date.now();
+      recordMatchToServer();
+    }
   }, 5000);
+
+  // ---- Match recording (persists player usage to the server database) ----
+  function buildMatchRecord() {
+    const counters = telemetry.getSnapshot().counters || {};
+    const skillsUsed = Object.entries(counters)
+      .reduce((sum, [key, value]) => key.startsWith('skill_') && key.endsWith('_usage') ? sum + value : sum, 0);
+    return {
+      playerId: telemetry.playerId,
+      sessionStart: new Date(telemetry.sessionStartedAt).toISOString(),
+      sessionEnd: new Date().toISOString(),
+      kills: telemetry.outcomes.kills,
+      deaths: telemetry.outcomes.playerDeaths,
+      goldEarned: inventorySystem.gold,
+      xpEarned: progressionSystem?.xp ?? 0,
+      levelReached: progressionSystem?.level ?? 1,
+      rankReached: progressionSystem?.rank ?? 'D',
+      wavesCleared: riftSystem.currentWave || 0,
+      skillsUsed,
+      damageDealt: Math.round(telemetry.damage.dealt.total),
+      damageTaken: Math.round(telemetry.damage.received.total),
+      durationSeconds: (Date.now() - telemetry.sessionStartedAt) / 1000,
+      classType: classId,
+    };
+  }
+  function recordMatchToServer({ beacon = false } = {}) {
+    // The server upserts by (playerId, sessionStart), so repeated sends just
+    // refresh this session's row. Skip only near-empty sessions.
+    if (telemetry.totalRecorded < 10) return;
+    const body = JSON.stringify(buildMatchRecord());
+    if (beacon && navigator.sendBeacon) {
+      navigator.sendBeacon('http://localhost:3001/api/matches', body);
+      return;
+    }
+    fetch('http://localhost:3001/api/matches', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body,
+      keepalive: true,
+    }).catch(() => {});
+  }
+  window.recordMatchToServer = recordMatchToServer;
 
   window.addEventListener('beforeunload', () => {
     emitEvent(createEvent(EventType.SESSION_END, playerEntity.id, {
@@ -580,6 +629,7 @@ async function initGame(classId = 'warrior') {
       deaths: telemetry.outcomes.playerDeaths,
     }));
     telemetry.flush();
+    recordMatchToServer({ beacon: true });
   });
 
   // Deterministic hooks used by the web-game play-test client.

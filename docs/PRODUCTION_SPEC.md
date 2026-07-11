@@ -51,42 +51,42 @@
 
 ### SUBAGENT 1: Gameplay Systems
 Files to create/modify:
-- `packages/client/src/systems/riftSystem.js` — Rift portal logic, dungeon instances
-- `packages/client/src/systems/waveSpawner.js` — Enemy wave spawning
-- `packages/client/src/systems/progression.js` — XP, leveling, SEED rank
-- `packages/client/src/systems/missionSystem.js` — Mission tracking
-- `packages/client/src/engine/combat.js` — Add death handling, respawn
+- `packages/client/src/game/systems/rift-system.js` — Rift portal logic, dungeon instances
+- `packages/client/src/game/systems/wave-spawner.js` — Enemy wave spawning
+- `packages/client/src/game/systems/progression.js` — XP, leveling, SEED rank
+- `packages/client/src/game/systems/mission-system.js` — Mission tracking
+- `packages/client/src/game/core/combat.js` — Add death handling, respawn
 - `packages/client/src/main.js` — Wire rift system, wave spawner, progression
 - `packages/shared/src/config.js` — Add RIFT_WAVES, RANKS, MISSIONS configs
 
 ### SUBAGENT 2: Shop, Inventory & Purchase UI
 Files to create/modify:
-- `packages/client/src/systems/inventorySystem.js` — Inventory management
-- `packages/client/src/systems/shopSystem.js` — Shopkeeper, buy/sell
-- `packages/client/src/systems/equipmentSystem.js` — Weapon equip, stat mods
-- `packages/client/src/systems/purchaseSimulator.js` — IAP mock UI
-- `packages/client/src/ui/shopUI.js` — Shop overlay
-- `packages/client/src/ui/inventoryUI.js` — Inventory panel
-- `packages/client/src/ui/purchaseUI.js` — Premium currency purchase flow
+- `packages/client/src/game/systems/inventory-system.js` — Inventory management
+- `packages/client/src/game/systems/shop-system.js` — Shopkeeper, buy/sell
+- `packages/client/src/game/systems/equipment-system.js` — Weapon equip, stat mods
+- `packages/client/src/game/systems/purchase-simulator.js` — IAP mock logic
+- `packages/client/src/presentation/shop-ui.js` — Shop overlay
+- `packages/client/src/presentation/inventory-ui.js` — Inventory panel
+- `packages/client/src/presentation/purchase-ui.js` — Premium currency purchase flow
 - `packages/shared/src/config.js` — Add ITEMS, SHOP, EQUIPMENT configs
 
 ### SUBAGENT 3: Agent Dashboards & Demo Scenarios
 Files to create/modify:
-- `packages/client/src/ui/agentPanel.js` — Live agent panel with tabs
-- `packages/client/src/ui/telemetryDashboard.js` — Telemetry viz
-- `packages/client/src/ui/abDashboard.js` — A/B test comparison
-- `packages/client/src/ui/dataDashboard.js` — Trajectory visualization
-- `packages/client/src/ui/damageNumbers.js` — Floating damage text
-- `packages/client/src/ui/screenEffects.js` — Shake, flash, vignette
-- `packages/client/src/demo/scenarioRunner.js` — Automated demo scenarios
-- `packages/client/src/demo/judgeWalkthrough.js` — Scripted demo flow
+- `packages/client/src/presentation/agent-panel.js` — Live agent panel with tabs
+- `packages/client/src/presentation/telemetry-dashboard.js` — Telemetry viz
+- `packages/client/src/presentation/ab-dashboard.js` — A/B test comparison
+- `packages/client/src/presentation/data-dashboard.js` — Trajectory visualization
+- `packages/client/src/presentation/damage-numbers.js` — Floating damage text
+- `packages/client/src/presentation/screen-effects.js` — Shake, flash, vignette
+- `packages/client/src/app/demo/scenario-runner.js` — Automated demo scenarios
+- `packages/client/src/app/demo/judge-walkthrough.js` — Scripted demo flow
 
 ## Technical Constraints
 - PixiJS v7+ (already installed)
 - Vite dev server on port 5173
 - Express + WS on port 3001
 - All UI overlays are HTML/CSS over the canvas (not PixiJS UI)
-- Use the existing riftAssets.js loader for all sprites
+- Use `infrastructure/assets/rift-asset-loader.js` for all runtime sprites
 - Game events must flow through telemetry/dataLog systems
 - A/B overrides must actually change gameplay parameters
 - Keep frame rate at 60fps (no heavy particle systems)
