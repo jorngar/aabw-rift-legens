@@ -6,6 +6,7 @@ import { esc } from './format.js';
 import { renderCompositeHero, renderVariantCard, renderCompareGrid } from './render-cards.js';
 import { renderBreakdownsGrid } from './render-breakdowns.js';
 import { renderSpatialGrid } from './render-spatial.js';
+import { API_BASE } from '../infrastructure/runtime-endpoints.js';
 
 const REFRESH_MS = 3000;
 const ROOT = document.getElementById('root');
@@ -69,10 +70,10 @@ function extrasFor(patchId, br) {
 async function refresh() {
   try {
     const [summary, dump, breakdowns, lbWeights] = await Promise.all([
-      fetch('/api/ab-tests/summary').then((r) => r.json()),
-      fetch('/api/ab-tests/data?limit=1').then((r) => r.json()),
-      fetch('/api/ab-tests/breakdowns').then((r) => r.json()),
-      fetch('/api/lb/weights').then((r) => r.json()),
+      fetch(`${API_BASE}/api/ab-tests/summary`).then((r) => r.json()),
+      fetch(`${API_BASE}/api/ab-tests/data?limit=1`).then((r) => r.json()),
+      fetch(`${API_BASE}/api/ab-tests/breakdowns`).then((r) => r.json()),
+      fetch(`${API_BASE}/api/lb/weights`).then((r) => r.json()),
     ]);
 
     if (!summary || !summary.length) {
