@@ -33,7 +33,7 @@ export function showTitleScreen(onStart) {
           <div>F — Interact &nbsp;|&nbsp; I — Inventory &nbsp;|&nbsp; Tab — Agent Panel</div>
           <div>1/2/3 — Use Items &nbsp;|&nbsp; P — Purchase UI &nbsp;|&nbsp; Shift+P — Auto Demo</div>
         </div>
-        <div style="margin-top:16px;color:#333;font-size:10px;">Three AI Agents: Telemetry | A/B Testing | Data Pipeline</div>
+        <div style="margin-top:16px;color:#555;font-size:10px;">Telemetry SDK → Local Hermes → Safe game patch</div>
       </div>
     </div>
   `;
@@ -63,7 +63,7 @@ export function showTitleScreen(onStart) {
     'Your first mission awaits.',
     '',
     'But these Rifts hold secrets beyond imagination...',
-    'and three AI observers watch your every move.',
+    'and a local AI turns every run into a safer, smarter patch.',
   ];
 
   // Phase 1: Show title

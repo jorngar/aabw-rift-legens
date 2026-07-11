@@ -143,7 +143,7 @@ export class DemoRunner {
     this.purchaseUI.toggle();
 
     // ─── PHASE 9: SUMMARY ───
-    await this._show('✅ DEMO COMPLETE', `Rift SEED — 2.5D Isometric RPG with 3 AI Agents. ${this.progression.kills} kills, ${this.progression.gold}g earned, Rank ${this.progression.rank}. All data captured.`, 5000);
+    await this._show('✅ DEMO COMPLETE', `Rift SEED captured the run for the Telemetry SDK and Hermes patch agent. ${this.progression.kills} kills, ${this.progression.gold}g earned, Rank ${this.progression.rank}. Evidence is ready.`, 5000);
 
     if (this._overlay) { this._overlay.remove(); this._overlay = null; }
     this.running = false;

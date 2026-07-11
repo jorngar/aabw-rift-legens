@@ -9,6 +9,7 @@ import { SERVER } from '@rift-seed/shared/config';
 import { TelemetryAgent } from './agents/telemetry-agent.js';
 import { ABTestingAgent } from './agents/ab-testing-agent.js';
 import { DataCleaningAgent } from './agents/data-cleaning-agent.js';
+import { HermesBalanceAgent } from './agents/hermes-balance-agent.js';
 import { getBalance, setBalance, getAllBalance, getMatchHistory, getAdjustments, getClasses, getClass, getAggregateStats, recordMatch, initDB } from './database.js';
 
 const app = express();
@@ -22,6 +23,7 @@ const wss = new WebSocketServer({ server: httpServer, path: '/ws' });
 const telemetryAgent = new TelemetryAgent();
 const abAgent = new ABTestingAgent();
 const dataAgent = new DataCleaningAgent();
+const hermesAgent = new HermesBalanceAgent({ telemetryAgent });
 
 // ---- WebSocket Routing ----
 const clients = new Map(); // ws -> { type, id }
@@ -97,11 +99,22 @@ function broadcast(clientType, data) {
 
 // ---- REST API ----
 app.get('/api/health', (req, res) => {
-  res.json({ status: 'ok', agents: 3, clients: clients.size });
+  res.json({ status: 'ok', agents: 4, clients: clients.size, hermes: hermesAgent.getSnapshot().status });
 });
 
 app.get('/api/telemetry', (req, res) => {
   res.json(telemetryAgent.getSnapshot());
+});
+
+// REST fallback for engines that cannot keep a WebSocket connection open.
+app.post('/api/telemetry/events', (req, res) => {
+  const events = Array.isArray(req.body?.events) ? req.body.events : [];
+  if (events.length === 0) return res.status(400).json({ error: 'events must be a non-empty array' });
+  if (events.length > 1000) return res.status(413).json({ error: 'batch exceeds the 1000 event limit' });
+  telemetryAgent.ingest(events);
+  const snapshot = telemetryAgent.getSnapshot();
+  broadcast('dashboard', { type: 'telemetry:update', snapshot });
+  res.status(202).json({ accepted: events.length, totalEvents: snapshot.totalEvents });
 });
 
 app.get('/api/ab-tests', (req, res) => {
@@ -122,9 +135,37 @@ app.get('/api/data-export', (req, res) => {
 app.get('/api/agents/status', (req, res) => {
   res.json({
     telemetry: telemetryAgent.getStatus(),
+    hermes: hermesAgent.getStatus(),
     abTesting: abAgent.getStatus(),
     dataCleaning: dataAgent.getStatus(),
   });
+});
+
+// ---- Hermes patch proposal API ----
+app.get('/api/agents/hermes', (req, res) => {
+  res.json(hermesAgent.getSnapshot());
+});
+
+app.post('/api/agents/hermes/analyze', async (req, res) => {
+  try {
+    const proposal = await hermesAgent.analyze({ patchId: req.body?.patchId || null });
+    broadcast('dashboard', { type: 'hermes:proposal', proposal });
+    res.json(proposal);
+  } catch (error) {
+    const status = error.message.includes('already running') ? 409 : error.message.includes('No telemetry') ? 400 : 502;
+    res.status(status).json({ error: error.message, hermes: hermesAgent.getSnapshot() });
+  }
+});
+
+app.post('/api/patches/:id/apply', (req, res) => {
+  try {
+    const proposal = hermesAgent.applyProposal(req.params.id);
+    broadcast('dashboard', { type: 'hermes:patch-applied', proposal });
+    res.json(proposal);
+  } catch (error) {
+    const status = error.message.includes('not found') ? 404 : 409;
+    res.status(status).json({ error: error.message });
+  }
 });
 
 // ---- Database API ----
@@ -179,7 +220,7 @@ async function start() {
   httpServer.listen(SERVER.PORT, () => {
     console.log(`[RiftSEED Server] Running on http://localhost:${SERVER.PORT}`);
     console.log(`[RiftSEED Server] WebSocket on ws://localhost:${SERVER.PORT}/ws`);
-    console.log(`[RiftSEED Server] Agents: Telemetry, A/B Testing, Data Cleaning`);
+    console.log(`[RiftSEED Server] Agents: Telemetry SDK, Hermes Balance, A/B Testing, Data Cleaning`);
     console.log(`[RiftSEED Server] Database: SQLite (game.db)`);
     console.log(`[RiftSEED Server] Classes: ${getClasses().map(c => c.name).join(', ')}`);
   });

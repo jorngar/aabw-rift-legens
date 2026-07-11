@@ -1,7 +1,7 @@
 // ============================================================
 // Telemetry System — hooks game events and sends to server
 // ============================================================
-import { EventType, TELEMETRY_SCHEMA_VERSION } from '@shared/events.js';
+import { EventType, TELEMETRY_SCHEMA_VERSION } from '@rift-seed/shared/events';
 
 const MAX_BUFFER_SIZE = 2000;
 const MAX_SERIES_SIZE = 240;
@@ -98,6 +98,7 @@ export class GameTelemetrySDK {
     this.totalRecorded++;
     this._updateCounters(event);
     this._updateMetrics(event);
+    this._reconcileObservedState(event);
     return normalized;
   }
 
@@ -135,8 +136,15 @@ export class GameTelemetrySDK {
         hpAfter: event.hpAfter ?? event.targetHpRemaining ?? null,
         mpBefore: event.mpBefore ?? null,
         mpAfter: event.mpAfter ?? null,
+        hpMax: event.hpMax ?? null,
+        mpMax: event.mpMax ?? null,
         delta: event.delta ?? null,
         distance: event.distance ?? null,
+        durationMs: event.durationMs ?? null,
+        manaCost: event.manaCost ?? null,
+        cooldownMs: event.cooldownMs ?? null,
+        quantity: event.quantity ?? null,
+        goldSpent: event.goldSpent ?? null,
       },
       position: event.position || (event.toX !== undefined ? { x: event.toX, y: event.toY } : null),
       context: {
@@ -144,6 +152,10 @@ export class GameTelemetrySDK {
         classId: event.classId || null,
         resource: event.resource || null,
         isCritical: Boolean(event.isCritical),
+        testId: event.testId || null,
+        variant: event.variant || null,
+        tier: event.tier ?? null,
+        result: event.result || null,
       },
     };
   }
@@ -206,10 +218,39 @@ export class GameTelemetrySDK {
     if (event.type === EventType.DAMAGE_TAKEN) {
       this.damage.received.total += damage;
       addToRecord(this.damage.received.byEnemy, event.enemyType || event.sourceId || 'unknown', damage);
+      this.resources.hp.lost += damage;
     }
     if (event.type === EventType.KILL) this.outcomes.kills++;
     if (event.type === EventType.DEATH && (event.victimType === 'player' || event.targetType === 'player')) {
       this.outcomes.playerDeaths++;
+    }
+    if (event.type === EventType.RESOURCE_CHANGE) {
+      const resource = event.resource;
+      const delta = Number(event.delta) || 0;
+      const bucket = this.resources[resource];
+      if (bucket) {
+        if (resource === 'hp') delta >= 0 ? bucket.gained += delta : bucket.lost += Math.abs(delta);
+        if (resource === 'mp') delta >= 0 ? bucket.gained += delta : bucket.spent += Math.abs(delta);
+        const after = Number(event[`${resource}After`]);
+        if (Number.isFinite(after)) {
+          bucket.current = after;
+          bucket.min = bucket.min === null ? after : Math.min(bucket.min, after);
+        }
+      }
+    }
+  }
+
+  _reconcileObservedState(event) {
+    if (!this._lastObservedState) return;
+    if (event.type === EventType.DAMAGE_TAKEN && Number.isFinite(Number(event.hpAfter))) {
+      this._lastObservedState.hp = Number(event.hpAfter);
+    }
+    if (event.type === EventType.RESOURCE_CHANGE) {
+      const resource = event.resource;
+      const after = Number(event[`${resource}After`]);
+      if ((resource === 'hp' || resource === 'mp') && Number.isFinite(after)) {
+        this._lastObservedState[resource] = after;
+      }
     }
   }
 
@@ -258,7 +299,8 @@ export class GameTelemetrySDK {
       this.record({
         type: EventType.STATE_SAMPLE, timestamp: now, playerId: player.id,
         actorId: player.id, actorType: 'player', sourceType: 'observation', sourceId: 'player_state',
-        hpAfter: current.hp, mpAfter: current.mp, position: current.position, ...context,
+        hpAfter: current.hp, hpMax: current.maxHp, mpAfter: current.mp, mpMax: current.maxMp,
+        position: current.position, ...context,
       });
       this._lastStateSample = now;
     }
@@ -268,9 +310,6 @@ export class GameTelemetrySDK {
   _trackResourceDelta(resource, before, after, timestamp) {
     const delta = after - before;
     if (Math.abs(delta) < 0.01) return;
-    const bucket = this.resources[resource];
-    if (resource === 'hp') delta > 0 ? bucket.gained += delta : bucket.lost += Math.abs(delta);
-    else delta > 0 ? bucket.gained += delta : bucket.spent += Math.abs(delta);
     this.record({
       type: EventType.RESOURCE_CHANGE, timestamp, playerId: this.playerEntityId,
       actorId: this.playerEntityId, actorType: 'player', sourceType: 'observation', sourceId: `${resource}_delta`,

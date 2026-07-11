@@ -1,6 +1,37 @@
-# Rift SEED — 2.5D Isometric Action RPG
+# Rift SEED — Telemetry SDK + Hermes Balance Agent
 
-> SEED Garden x Solo Leveling — A hackathon demo showcasing three AI-powered game analytics agents built on PixiJS.
+> A hackathon demo showing a complete game-data loop: a reusable telemetry SDK turns raw gameplay into explainable evidence, then a locally installed Hermes agent proposes safe balance patches to improve the player experience and test retention hypotheses.
+
+## The Two-Part Solution
+
+### 1. Gameplay Telemetry SDK
+
+`GameTelemetrySDK` captures a versioned, normalized event envelope without coupling analytics to PixiJS. The current game integration records:
+
+- Weapon damage, grouped by equipped weapon
+- Skill damage and usage, grouped by skill
+- Damage received, grouped by enemy type
+- HP and MP values and deltas over time
+- Sampled movement paths, distance, turns, and velocity
+- Kills, real player deaths, and per-minute rates
+- Sessions, areas, class, patch, and game-version context
+
+The SDK keeps unsent events while offline, caps its local queue, reconnects automatically, and exposes a live local snapshot for the in-game dashboard.
+
+### 2. Hermes Balance Agent
+
+The server aggregates SDK events into compact evidence and invokes the locally installed Hermes CLI in one-shot mode. Hermes returns a JSON patch proposal with rationale, confidence, expected impact, and evidence for each change.
+
+Before a proposal can be applied, the host validates it:
+
+- Only known balance keys are accepted
+- Only numeric changes are accepted
+- Values are constrained by hard gameplay bounds
+- Each change is capped to ±30% of the current value
+- Applying a proposal requires a separate explicit action
+- Every applied value is written to the adjustment audit log
+
+Hermes proposes a retention hypothesis; it does not claim causality from a single session. Use the existing A/B agent to validate the patch on a follow-up cohort.
 
 ## Quick Start
 
@@ -17,6 +48,14 @@ pnpm dev:server
 # Start both concurrently
 pnpm dev:all
 ```
+
+Hermes must be available on `PATH`:
+
+```bash
+hermes --version
+```
+
+To use a custom binary path, start the server with `HERMES_BIN=/path/to/hermes`.
 
 Open http://localhost:5173 in your browser.
 
@@ -134,13 +173,15 @@ Three packages share code through workspace dependencies:
 - **A* pathfinding**: Grid-based pathfinding on the isometric tile map
 - **Procedural tiles**: PIXI.Graphics diamond shapes with seeded random color variants
 
-### Three AI Agents
+### Analytics Agents
 
-1. **Telemetry Agent** — Tracks game events (kills, deaths, skill usage, session duration). Detects anomalies and recommends balance changes (nerfs/buffs).
+1. **Telemetry SDK Aggregator** — Converts normalized events into damage, resource, movement, outcome, and session evidence.
 
-2. **A/B Testing Agent** — Compares two game variants with statistical significance testing (Welch's t-test). Auto-promotes winners.
+2. **Hermes Balance Agent** — Uses local Hermes to turn that evidence into validated, reviewable patch proposals.
 
-3. **Data Cleaning Agent** — Transforms raw play logs into robotics-ready CSV. Tracks decision paths, movement trajectories, action sequences.
+3. **A/B Testing Agent** — Compares two game variants with statistical significance testing (Welch's t-test). Auto-promotes winners.
+
+4. **Data Cleaning Agent** — Transforms raw play logs into robotics-ready CSV. Tracks decision paths, movement trajectories, action sequences.
 
 ### Data Flow
 
@@ -150,6 +191,31 @@ Game Event → emitEvent() → TelemetrySystem.record()
                          → WebSocket → Server Agents
                          → Agent Panel (live dashboard)
 ```
+
+### Patch Proposal API
+
+```bash
+# Inspect aggregated evidence
+curl http://localhost:3001/api/telemetry
+
+# Optional REST ingestion fallback (the game uses WebSocket batches)
+curl -X POST http://localhost:3001/api/telemetry/events \
+  -H 'Content-Type: application/json' \
+  -d '{"events":[{"schemaVersion":"1.0.0","type":"state:sample","patchId":"v0.1.0","sessionId":"demo","actor":{"type":"player"},"metrics":{"hpAfter":500,"mpAfter":100}}]}'
+
+# Ask local Hermes for a validated proposal
+curl -X POST http://localhost:3001/api/agents/hermes/analyze \
+  -H 'Content-Type: application/json' \
+  -d '{"patchId":"v0.1.0"}'
+
+# Review Hermes status and the latest proposal
+curl http://localhost:3001/api/agents/hermes
+
+# Explicitly apply a reviewed proposal
+curl -X POST http://localhost:3001/api/patches/PATCH_ID/apply
+```
+
+In the game, press `Tab`, open **Telemetry**, play long enough to collect at least 30 events, then use **Generate Patch**. The dashboard shows the exact proposed diff before **Apply** becomes available.
 
 ## Sprite Assets
 

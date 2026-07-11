@@ -1,198 +1,235 @@
 // ============================================================
-// Telemetry Agent — reads game data, adjusts balance live
+// Telemetry Aggregation Agent — SDK evidence for Hermes
 // ============================================================
 import { EventType } from '@rift-seed/shared/events';
-import { getBalance, setBalance, getAllBalance, getAggregateStats, recordMatch, getMatchHistory, getAdjustments } from '../database.js';
+import { getAllBalance, getMatchHistory, getAdjustments, recordMatch } from '../database.js';
 
-/**
- * Telemetry Agent: ingests game events, detects anomalies,
- * reads historical data from SQLite, and auto-adjusts balance.
- */
+function increment(record, key, value = 1) {
+  record[key] = (record[key] || 0) + value;
+}
+
+function average(values) {
+  if (!values.length) return 0;
+  return values.reduce((sum, value) => sum + value, 0) / values.length;
+}
+
+function createBaseline(patchId) {
+  return {
+    patchId,
+    events: 0,
+    sessions: new Set(),
+    startedAt: Date.now(),
+    kills: 0,
+    playerDeaths: 0,
+    damage: {
+      weapon: 0,
+      skill: 0,
+      received: 0,
+      byWeapon: {},
+      bySkill: {},
+      byEnemy: {},
+    },
+    skills: { uses: {}, hits: {} },
+    resources: {
+      hp: { gained: 0, lost: 0, samples: [] },
+      mp: { gained: 0, spent: 0, samples: [] },
+    },
+    path: { distance: 0, samples: 0 },
+    sessionDurations: [],
+  };
+}
+
+/** Aggregates normalized SDK events into compact, explainable evidence. */
 export class TelemetryAgent {
   constructor() {
-    /** @type {Array<Object>} */
     this.events = [];
-    /** @type {Map<string, Object>} per-patch baselines */
     this.patchBaselines = new Map();
-    /** @type {Array<Object>} generated reports */
     this.reports = [];
     this.totalIngested = 0;
     this.sessionStart = new Date().toISOString();
-    this.playerId = null;
-    this.lastAdjustment = 0;
   }
 
-  /**
-   * Ingest a batch of telemetry events.
-   */
   ingest(events) {
     for (const event of events) {
+      if (!event || typeof event.type !== 'string') continue;
       this.events.push(event);
+      if (this.events.length > 10000) this.events.splice(0, this.events.length - 10000);
       this.totalIngested++;
       this._updateBaseline(event);
-
-      if (event.playerId) this.playerId = event.playerId;
     }
 
-    // Auto-analyze every 50 events
-    if (this.events.length % 50 === 0) {
-      this.analyze();
-    }
+    if (this.totalIngested > 0 && this.totalIngested % 50 === 0) this.analyze();
   }
 
   _updateBaseline(event) {
     const patchId = event.patchId || 'unknown';
-    if (!this.patchBaselines.has(patchId)) {
-      this.patchBaselines.set(patchId, {
-        patchId, events: 0, deaths: 0, kills: 0,
-        skillUsage: {}, damageDealt: 0, damageTaken: 0,
-        sessionDurations: [], goldEarned: 0, xpEarned: 0,
-      });
-    }
+    if (!this.patchBaselines.has(patchId)) this.patchBaselines.set(patchId, createBaseline(patchId));
+    const baseline = this.patchBaselines.get(patchId);
+    baseline.events++;
+    if (event.sessionId) baseline.sessions.add(event.sessionId);
 
-    const b = this.patchBaselines.get(patchId);
-    b.events++;
+    const actorType = event.actor?.type || event.actorType;
+    const targetType = event.target?.type || event.targetType || event.victimType;
+    const sourceType = event.source?.type || event.sourceType;
+    const sourceId = event.source?.id || event.sourceId || event.skillId || 'unknown';
+    const enemyType = event.target?.enemyType || event.enemyType || sourceId;
+    const damage = Number(event.metrics?.damage ?? event.damage) || 0;
 
     switch (event.type) {
-      case EventType.DEATH: b.deaths++; break;
       case EventType.ATTACK_HIT:
-        b.kills++;
-        b.damageDealt += event.damage || 0;
+      case EventType.SKILL_HIT:
+        if (actorType === 'player') {
+          if (sourceType === 'skill' || event.type === EventType.SKILL_HIT) {
+            baseline.damage.skill += damage;
+            increment(baseline.damage.bySkill, sourceId, damage);
+            increment(baseline.skills.hits, sourceId);
+          } else {
+            baseline.damage.weapon += damage;
+            increment(baseline.damage.byWeapon, sourceId, damage);
+          }
+        }
         break;
       case EventType.DAMAGE_TAKEN:
-        b.damageTaken += event.damage || 0;
+        baseline.damage.received += damage;
+        baseline.resources.hp.lost += damage;
+        increment(baseline.damage.byEnemy, enemyType || 'unknown', damage);
         break;
-      case EventType.SKILL_USE: {
-        const skill = event.skillId || 'unknown';
-        b.skillUsage[skill] = (b.skillUsage[skill] || 0) + 1;
+      case EventType.SKILL_USE:
+        if (actorType === 'player') increment(baseline.skills.uses, sourceId);
+        break;
+      case EventType.KILL:
+        baseline.kills++;
+        break;
+      case EventType.DEATH:
+        if (targetType === 'player') baseline.playerDeaths++;
+        break;
+      case EventType.RESOURCE_CHANGE: {
+        const resource = event.context?.resource || event.resource;
+        const delta = Number(event.metrics?.delta ?? event.delta) || 0;
+        if (resource === 'hp') delta >= 0 ? baseline.resources.hp.gained += delta : baseline.resources.hp.lost += Math.abs(delta);
+        if (resource === 'mp') delta >= 0 ? baseline.resources.mp.gained += delta : baseline.resources.mp.spent += Math.abs(delta);
         break;
       }
+      case EventType.STATE_SAMPLE: {
+        const hp = Number(event.metrics?.hpAfter ?? event.hpAfter);
+        const mp = Number(event.metrics?.mpAfter ?? event.mpAfter);
+        if (Number.isFinite(hp)) baseline.resources.hp.samples.push(hp);
+        if (Number.isFinite(mp)) baseline.resources.mp.samples.push(mp);
+        if (baseline.resources.hp.samples.length > 500) baseline.resources.hp.samples.shift();
+        if (baseline.resources.mp.samples.length > 500) baseline.resources.mp.samples.shift();
+        break;
+      }
+      case EventType.PATH_SAMPLE:
+        baseline.path.samples++;
+        baseline.path.distance += Number(event.metrics?.distance ?? event.distance) || 0;
+        break;
       case EventType.SESSION_END:
-        if (event.durationMs) b.sessionDurations.push(event.durationMs);
+        baseline.sessionDurations.push(Number(event.durationMs ?? event.metrics?.durationMs) || 0);
         break;
     }
   }
 
-  /**
-   * Run analysis: detect anomalies, compare to DB history, auto-adjust balance.
-   */
+  getEvidence(patchId = null) {
+    const baseline = patchId
+      ? this.patchBaselines.get(patchId)
+      : [...this.patchBaselines.values()].sort((a, b) => b.startedAt - a.startedAt)[0];
+    if (!baseline) return null;
+    const durationMinutes = Math.max((Date.now() - baseline.startedAt) / 60000, 1 / 60);
+    const totalDamage = baseline.damage.weapon + baseline.damage.skill;
+    const skillUses = Object.values(baseline.skills.uses).reduce((sum, count) => sum + count, 0);
+    return {
+      patchId: baseline.patchId,
+      sample: {
+        events: baseline.events,
+        sessions: baseline.sessions.size,
+        observedMinutes: Number(durationMinutes.toFixed(2)),
+        sufficientForDirection: baseline.events >= 30,
+      },
+      outcomes: {
+        kills: baseline.kills,
+        playerDeaths: baseline.playerDeaths,
+        killsPerMinute: Number((baseline.kills / durationMinutes).toFixed(2)),
+        deathsPerMinute: Number((baseline.playerDeaths / durationMinutes).toFixed(2)),
+        killDeathRatio: baseline.playerDeaths > 0 ? Number((baseline.kills / baseline.playerDeaths).toFixed(2)) : baseline.kills,
+      },
+      damage: {
+        totalDealt: totalDamage,
+        weapon: baseline.damage.weapon,
+        skill: baseline.damage.skill,
+        received: baseline.damage.received,
+        skillShare: totalDamage > 0 ? Number((baseline.damage.skill / totalDamage).toFixed(3)) : 0,
+        byWeapon: baseline.damage.byWeapon,
+        bySkill: baseline.damage.bySkill,
+        byEnemy: baseline.damage.byEnemy,
+      },
+      skills: {
+        uses: baseline.skills.uses,
+        hits: baseline.skills.hits,
+        totalUses: skillUses,
+      },
+      resources: {
+        hp: {
+          gained: Number(baseline.resources.hp.gained.toFixed(1)),
+          lost: Number(baseline.resources.hp.lost.toFixed(1)),
+          average: Number(average(baseline.resources.hp.samples).toFixed(1)),
+          minimum: baseline.resources.hp.samples.length ? Math.min(...baseline.resources.hp.samples) : null,
+        },
+        mp: {
+          gained: Number(baseline.resources.mp.gained.toFixed(1)),
+          spent: Number(baseline.resources.mp.spent.toFixed(1)),
+          average: Number(average(baseline.resources.mp.samples).toFixed(1)),
+          minimum: baseline.resources.mp.samples.length ? Math.min(...baseline.resources.mp.samples) : null,
+        },
+      },
+      movement: {
+        distanceTiles: Number(baseline.path.distance.toFixed(2)),
+        samples: baseline.path.samples,
+        tilesPerMinute: Number((baseline.path.distance / durationMinutes).toFixed(2)),
+      },
+      session: {
+        completedSessions: baseline.sessionDurations.length,
+        averageDurationMs: Math.round(average(baseline.sessionDurations)),
+      },
+    };
+  }
+
   analyze() {
+    const evidence = this.getEvidence();
+    if (!evidence) return null;
     const findings = [];
-
-    for (const [patchId, baseline] of this.patchBaselines) {
-      if (baseline.events < 10) continue;
-
-      // Compare to historical averages from DB
-      const history = getAggregateStats();
-      if (history && history.total_matches > 0) {
-        // Check if death rate is too high vs historical
-        const currentDeathRate = baseline.deaths / Math.max(1, baseline.events);
-        const historicalDeathRate = (history.avg_deaths || 0) / Math.max(1, history.avg_kills || 1);
-
-        if (currentDeathRate > historicalDeathRate * 1.5 && currentDeathRate > 0.1) {
-          findings.push({
-            metric: 'death_rate',
-            current: currentDeathRate.toFixed(3),
-            historical: historicalDeathRate.toFixed(3),
-            recommendation: 'AUTO-NERF: Reducing enemy damage by 15%',
-            confidence: 0.85,
-          });
-
-          // Auto-adjust: reduce enemy damage
-          const now = Date.now();
-          if (now - this.lastAdjustment > 30000) { // max once per 30s
-            this._autoNerfEnemies(0.85);
-            this.lastAdjustment = now;
-          }
-        }
-
-        // Check if skill usage is too concentrated
-        const totalSkills = Object.values(baseline.skillUsage).reduce((a, b) => a + b, 0);
-        for (const [skill, count] of Object.entries(baseline.skillUsage)) {
-          const pct = totalSkills > 0 ? count / totalSkills : 0;
-          if (pct > 0.6) {
-            findings.push({
-              metric: `skill_${skill}_dominance`,
-              current: `${(pct * 100).toFixed(0)}%`,
-              recommendation: `NERF: ${skill} dominates usage. Consider increasing cooldown.`,
-              confidence: 0.8,
-            });
-
-            // Auto-adjust: increase cooldown
-            const cooldownKey = `skill.${skill.replace(/([A-Z])/g, '_$1').toLowerCase()}.cooldown`;
-            const currentCooldown = getBalance(cooldownKey, 3000);
-            if (currentCooldown < 8000) {
-              setBalance(cooldownKey, currentCooldown * 1.2, `Auto-nerf: ${skill} dominates at ${(pct * 100).toFixed(0)}%`, 'telemetry');
-            }
-          }
-        }
-      }
-
-      // Check kill rate — if too easy, buff enemies
-      const killRate = baseline.kills / Math.max(1, baseline.events);
-      if (killRate > 0.3 && baseline.deaths === 0) {
-        findings.push({
-          metric: 'too_easy',
-          current: `kill_rate=${killRate.toFixed(2)}, deaths=0`,
-          recommendation: 'AUTO-BUFF: Increasing enemy HP by 10%',
-          confidence: 0.7,
-        });
-        this._autoBuffEnemies(1.1);
-      }
+    if (!evidence.sample.sufficientForDirection) {
+      findings.push({ severity: 'info', metric: 'sample_size', message: 'Collect at least 30 events before treating balance signals as directional.' });
     }
-
+    if (evidence.outcomes.playerDeaths >= 2 && evidence.outcomes.killDeathRatio < 1) {
+      findings.push({ severity: 'high', metric: 'survivability', message: 'Player deaths exceed kills; inspect enemy damage and player effective HP.' });
+    }
+    if (evidence.damage.skillShare > 0.8 && evidence.skills.totalUses >= 5) {
+      findings.push({ severity: 'medium', metric: 'skill_damage_share', message: 'Skills contribute over 80% of dealt damage; basic weapons may lack agency.' });
+    }
     const report = {
       timestamp: Date.now(),
-      totalEvents: this.totalIngested,
-      patchesAnalyzed: this.patchBaselines.size,
+      evidence,
       findings,
-      adjustments: getAdjustments(5),
-      historicalStats: getAggregateStats(),
-      overallHealthScore: this._calculateHealthScore(findings),
+      overallHealthScore: Math.max(20, 100 - findings.filter(f => f.severity === 'high').length * 25 - findings.filter(f => f.severity === 'medium').length * 10),
     };
-
     this.reports.push(report);
+    if (this.reports.length > 100) this.reports.shift();
     return report;
   }
 
-  _autoNerfEnemies(factor) {
-    const keys = ['enemy.shadow_beast.damage', 'enemy.rift_knight.damage'];
-    for (const key of keys) {
-      const current = getBalance(key);
-      const new_val = Math.max(1, Math.round(current * factor));
-      setBalance(key, new_val, `Auto-nerf: death rate too high`, 'telemetry');
-    }
-  }
-
-  _autoBuffEnemies(factor) {
-    const keys = ['enemy.shadow_beast.hp', 'enemy.rift_knight.hp'];
-    for (const key of keys) {
-      const current = getBalance(key);
-      setBalance(key, Math.round(current * factor), `Auto-buff: game too easy`, 'telemetry');
-    }
-  }
-
-  _calculateHealthScore(findings) {
-    if (findings.length === 0) return 95;
-    const critical = findings.filter(f => f.confidence > 0.8).length;
-    return Math.max(20, 100 - critical * 15 - findings.length * 5);
-  }
-
-  /**
-   * Record a completed match to the database.
-   */
   recordMatchToDB(matchData) {
     recordMatch(matchData);
   }
 
   getSnapshot() {
-    const latest = this.reports.length > 0 ? this.reports[this.reports.length - 1] : null;
+    const latestReport = this.reports.at(-1) || this.analyze();
     return {
       totalEvents: this.totalIngested,
       patches: [...this.patchBaselines.keys()],
-      latestReport: latest,
+      evidence: this.getEvidence(),
+      latestReport,
       reportsGenerated: this.reports.length,
-      balanceValues: getAllBalanceQuick(),
+      balanceValues: getAllBalance(),
       matchHistory: getMatchHistory(10),
       adjustments: getAdjustments(10),
     };
@@ -200,20 +237,11 @@ export class TelemetryAgent {
 
   getStatus() {
     return {
-      name: 'Telemetry Agent',
+      name: 'Telemetry SDK Aggregator',
       status: 'active',
       eventsProcessed: this.totalIngested,
+      patchesObserved: this.patchBaselines.size,
       reportsGenerated: this.reports.length,
-      autoAdjustments: getAdjustments(10).length,
     };
-  }
-}
-
-// Quick helper to get all balance values
-function getAllBalanceQuick() {
-  try {
-    return getAllBalance();
-  } catch {
-    return {};
   }
 }

@@ -18,6 +18,9 @@ export class AgentPanel {
     this._interval = null;
     this._sessionStart = Date.now();
     this._abVariant = this.abTesting.getVariant('shadowStrikeCooldown') || 'A';
+    this.serverTelemetry = null;
+    this.hermesState = { status: 'idle', latestProposal: null, lastError: null };
+    this._serverRefreshInFlight = false;
   }
 
   init() {
@@ -36,7 +39,9 @@ export class AgentPanel {
     });
 
     this._interval = setInterval(() => { if (this.visible) this.render(); }, 500);
+    this._serverInterval = setInterval(() => this._refreshServerState(), 2500);
     this._connectWS();
+    this._refreshServerState();
   }
 
   toggle() {
@@ -55,13 +60,13 @@ export class AgentPanel {
     const overlay = document.createElement('div');
     overlay.style.cssText = 'position:fixed;top:50%;left:50%;transform:translate(-50%,-50%);background:rgba(10,6,18,0.97);border:2px solid #e8ff47;padding:24px 32px;border-radius:12px;z-index:999;font-family:monospace;max-width:440px;text-align:center;box-shadow:0 0 40px rgba(232,255,71,0.15);';
     overlay.innerHTML = `
-      <div style="color:#e8ff47;font-size:16px;font-weight:bold;margin-bottom:12px;">AI Agent Dashboard</div>
+      <div style="color:#e8ff47;font-size:16px;font-weight:bold;margin-bottom:12px;">From play session to patch</div>
       <div style="color:#aaa;font-size:12px;line-height:1.8;text-align:left;">
-        <div style="margin-bottom:8px;"><span style="color:#4a9eff;">📡 TELEMETRY</span> — Tracks game events in real-time. Detects balance anomalies and recommends nerfs/buffs.</div>
-        <div style="margin-bottom:8px;"><span style="color:#a855f7;">🔬 A/B TESTING</span> — Compares two game variants with statistical significance testing. Auto-promotes winners.</div>
-        <div style="margin-bottom:8px;"><span style="color:#44ff44;">🤖 DATA PIPELINE</span> — Transforms play logs into robotics-ready CSV. Visualizes trajectories and decisions.</div>
+        <div style="margin-bottom:8px;"><span style="color:#4a9eff;">1 · TELEMETRY SDK</span> — Turns combat, resources, outcomes, and movement into versioned evidence.</div>
+        <div style="margin-bottom:8px;"><span style="color:#e8ff47;">2 · HERMES AGENT</span> — Proposes a bounded config diff with rationale and confidence. You choose whether to apply it.</div>
+        <div style="margin-bottom:8px;color:#777;">A/B testing and the data pipeline remain available as supporting workflows.</div>
       </div>
-      <div style="color:#666;font-size:10px;margin-top:16px;">Click tabs to switch views. All data is live from your gameplay.</div>
+      <div style="color:#666;font-size:10px;margin-top:16px;">Play, open Telemetry, then generate a patch. All evidence is live.</div>
       <div style="color:#e8ff47;font-size:11px;margin-top:12px;cursor:pointer;" onclick="this.parentElement.remove();">Got it</div>
     `;
     document.body.appendChild(overlay);
@@ -93,82 +98,110 @@ export class AgentPanel {
 
     // Wire export buttons
     this._wireExportButtons();
+    this._wireTelemetryButtons();
   }
 
   // ─── TELEMETRY DASHBOARD ────────────────────────────────
   _renderTelemetry() {
     const snap = this.telemetry.getSnapshot();
     const c = snap.counters || {};
-    const sessionMs = Date.now() - this._sessionStart;
-    const sessionMin = (sessionMs / 60000).toFixed(1);
-    const totalEvents = Object.values(c).reduce((a, b) => a + b, 0);
+    const metrics = snap.metrics || {};
+    const damage = metrics.damage || { dealt: {}, received: {} };
+    const resources = metrics.resources || {};
+    const outcomes = metrics.outcomes || {};
+    const path = metrics.path || {};
+    const serverEvidence = this.serverTelemetry?.evidence;
+    const serverEvents = this.serverTelemetry?.totalEvents || 0;
+    const statusColor = snap.connectionState === 'connected' ? '#44ff44' : '#ff8844';
 
-    // Compute health score
-    const healthScore = this._computeHealthScore(c);
+    let html = `<h3 style="color:#e8ff47;margin:0 0 4px;font-size:14px;">TELEMETRY SDK → HERMES</h3>`;
+    html += `<div style="display:flex;justify-content:space-between;font-size:9px;color:#666;margin-bottom:10px;">
+      <span>schema ${snap.schemaVersion} · patch ${this._escape(snap.patchId)}</span>
+      <span style="color:${statusColor}">● ${this._escape(snap.connectionState)}</span>
+    </div>`;
 
-    let html = `<h3 style="color:#e8ff47;margin:0 0 10px;font-size:14px;">📡 TELEMETRY AGENT</h3>`;
-    html += `<div style="font-size:10px;color:#666;margin-bottom:8px;">Measures patch impact on live-service games</div>`;
-
-    // Metric cards
-    html += `<div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:6px;margin-bottom:12px;">`;
-    html += this._metricCard('Events', totalEvents, '#e8ff47');
-    html += this._metricCard('Session', `${sessionMin}m`, '#4a9eff');
-    html += this._metricCard('Health', `${healthScore}`, healthScore > 70 ? '#44ff44' : '#ff4444');
+    html += `<div style="display:grid;grid-template-columns:repeat(4,1fr);gap:5px;margin-bottom:12px;">`;
+    html += this._metricCard('EVENTS', snap.eventsRecorded || 0, '#e8ff47');
+    html += this._metricCard('SERVER', serverEvents, '#4a9eff');
+    html += this._metricCard('KILLS', outcomes.kills || 0, '#44ff44');
+    html += this._metricCard('DEATHS', outcomes.playerDeaths || 0, '#ff6666');
     html += `</div>`;
 
-    html += `<div style="display:grid;grid-template-columns:1fr 1fr;gap:6px;margin-bottom:12px;">`;
-    html += this._metricCard('Kills', this.progression?.kills || c.total_kills || 0, '#ff4444');
-    html += this._metricCard('Deaths', c.total_deaths || 0, '#ff4444');
-    html += this._metricCard('Dmg Dealt', c.total_damage_dealt || 0, '#ff8844');
-    html += this._metricCard('Gold', this.progression?.gold || 0, '#f59e0b');
+    html += this._sectionLabel('DAMAGE ATTRIBUTION');
+    html += `<div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:5px;margin-bottom:7px;">`;
+    html += this._metricCard('WEAPONS', Math.round(damage.dealt?.weapon || 0), '#e8ff47');
+    html += this._metricCard('SKILLS', Math.round(damage.dealt?.skill || 0), '#a855f7');
+    html += this._metricCard('RECEIVED', Math.round(damage.received?.total || 0), '#ff6666');
     html += `</div>`;
+    html += this._renderBreakdown('Weapon', damage.dealt?.byWeapon, '#e8ff47');
+    html += this._renderBreakdown('Skill', damage.dealt?.bySkill, '#a855f7');
+    html += this._renderBreakdown('Enemy source', damage.received?.byEnemy, '#ff6666');
 
-    // Skill usage bars
-    html += `<div style="margin:10px 0 6px;font-size:10px;color:#888;text-transform:uppercase;">Skill Usage Distribution</div>`;
-    const skills = ['shadowStrike', 'riftSlash', 'heal', 'riftTeleport'];
-    const skillLabels = ['Shadow Strike', 'Rift Slash', 'Seed Heal', 'Rift Teleport'];
-    const skillColors = ['#e8ff47', '#a855f7', '#44ff44', '#4a9eff'];
-    const maxSkill = Math.max(1, ...skills.map(s => c[`skill_${s}_usage`] || 0));
-    for (let i = 0; i < skills.length; i++) {
-      const count = c[`skill_${skills[i]}_usage`] || 0;
-      const pct = (count / maxSkill) * 100;
-      const overused = count / Math.max(1, totalEvents) > 0.4;
-      html += `<div style="margin:4px 0;">
-        <div style="display:flex;justify-content:space-between;font-size:10px;">
-          <span style="color:${skillColors[i]}">${skillLabels[i]}</span>
-          <span>${count} ${overused ? '⚠️' : ''}</span>
-        </div>
-        <div style="background:#1a1a2a;height:6px;border-radius:3px;margin-top:2px;">
-          <div style="background:${skillColors[i]};width:${pct}%;height:100%;border-radius:3px;transition:width 0.3s;"></div>
-        </div>
-      </div>`;
-    }
+    html += this._sectionLabel('PLAYER STATE OVER TIME');
+    html += `<div style="display:grid;grid-template-columns:1fr 1fr;gap:6px;margin-bottom:8px;">`;
+    html += this._resourceRow('HP', resources.hp, '#ff6666', 'lost');
+    html += this._resourceRow('MP', resources.mp, '#4a9eff', 'spent');
+    html += `</div>`;
+    html += `<div style="display:flex;justify-content:space-between;padding:6px 0;border-top:1px solid #1a1a2a;font-size:10px;">
+      <span>Path: <b style="color:#ddd">${(path.distance || 0).toFixed(1)} tiles</b></span>
+      <span>Turns: <b style="color:#ddd">${path.directionChanges || 0}</b></span>
+      <span>Velocity: <b style="color:#ddd">${(path.averageSpeedTilesPerMinute || 0).toFixed(1)}/min</b></span>
+    </div>`;
 
-    // Anomaly detection
-    html += `<div style="margin:10px 0 6px;font-size:10px;color:#888;text-transform:uppercase;">Anomaly Detection</div>`;
-    const anomalies = this._detectAnomalies(c, totalEvents);
-    if (anomalies.length === 0) {
-      html += `<div style="padding:6px;background:rgba(68,255,68,0.1);border-left:3px solid #44ff44;font-size:10px;color:#44ff44;">✓ All metrics within normal range</div>`;
-    } else {
-      for (const a of anomalies) {
-        html += `<div style="padding:6px;margin:4px 0;background:rgba(255,68,68,0.1);border-left:3px solid ${a.severity === 'high' ? '#ff4444' : '#ff8844'};font-size:10px;color:${a.severity === 'high' ? '#ff8888' : '#ffaa88'};">
-          <div style="font-weight:bold;">⚠ ${a.metric}</div>
-          <div style="margin-top:2px;">${a.recommendation}</div>
+    html += this._sectionLabel('HERMES PATCH AGENT');
+    const hermes = this.hermesState || {};
+    const proposal = hermes.latestProposal;
+    const enough = serverEvidence?.sample?.sufficientForDirection;
+    html += `<div style="padding:8px;background:#11101a;border:1px solid #2a2a3a;border-radius:4px;margin-bottom:7px;">
+      <div style="display:flex;justify-content:space-between;align-items:center;">
+        <span style="color:#ddd;font-size:10px;">Local Hermes CLI</span>
+        <span style="font-size:9px;color:${hermes.status === 'error' ? '#ff6666' : hermes.status === 'analyzing' ? '#e8ff47' : '#44ff44'}">${this._escape(hermes.status || 'idle')}</span>
+      </div>
+      <div style="color:${enough ? '#44ff44' : '#ff8844'};font-size:9px;margin-top:5px;">${enough ? 'Directional sample ready' : 'Weak sample — gather 30+ events before judging the patch'}</div>
+      ${hermes.lastError ? `<div style="color:#ff7777;font-size:9px;margin-top:5px;">${this._escape(hermes.lastError)}</div>` : ''}
+    </div>`;
+
+    if (proposal) {
+      html += `<div style="font-size:11px;color:#ddd;margin:7px 0 3px;">${this._escape(proposal.summary)}</div>`;
+      html += `<div style="font-size:9px;color:#777;line-height:1.5;margin-bottom:7px;">Confidence ${Math.round((proposal.confidence || 0) * 100)}% · ${this._escape(proposal.expectedImpact || 'Validate in a follow-up cohort')}</div>`;
+      for (const change of proposal.changes || []) {
+        const arrow = change.proposedValue > change.currentValue ? '↑' : change.proposedValue < change.currentValue ? '↓' : '→';
+        html += `<div style="padding:6px 0;border-top:1px solid #252433;font-size:9px;">
+          <div style="display:flex;justify-content:space-between;color:#bbb;"><span>${this._escape(change.key)}</span><span style="color:#e8ff47">${change.currentValue} ${arrow} ${change.proposedValue}</span></div>
+          <div style="color:#666;margin-top:3px;">${this._escape(change.reason)}</div>
         </div>`;
       }
+    } else {
+      html += `<div style="padding:10px;color:#555;font-size:10px;text-align:center;border:1px dashed #2a2a3a;">Play a short session, then ask Hermes to turn the evidence into a patch.</div>`;
     }
 
-    // Recommendations
-    html += `<div style="margin:10px 0 6px;font-size:10px;color:#888;text-transform:uppercase;">Agent Recommendations</div>`;
-    const recs = this._generateRecommendations(c, totalEvents, healthScore);
-    for (const r of recs) {
-      html += `<div style="padding:6px;margin:3px 0;background:#1a1a2a;border-radius:4px;font-size:10px;">
-        <span style="color:${r.color};font-weight:bold;">[${r.type}]</span>
-        <span style="color:#ddd;"> ${r.text}</span>
-      </div>`;
-    }
+    html += `<div style="display:flex;gap:6px;margin-top:8px;">
+      <button id="hermes-analyze" ${hermes.status === 'analyzing' ? 'disabled' : ''} style="flex:1;padding:8px;background:#e8ff47;color:#111;border:0;cursor:pointer;font-family:monospace;font-size:10px;font-weight:bold;border-radius:3px;opacity:${hermes.status === 'analyzing' ? 0.5 : 1};">${hermes.status === 'analyzing' ? 'ANALYZING…' : 'GENERATE PATCH'}</button>
+      ${proposal?.status === 'proposed' && proposal.changes?.length ? `<button id="hermes-apply" data-patch-id="${this._escape(proposal.id)}" style="padding:8px;background:#1a1a2a;color:#44ff44;border:1px solid #44ff44;cursor:pointer;font-family:monospace;font-size:10px;border-radius:3px;">APPLY</button>` : ''}
+    </div>`;
 
     return html;
+  }
+
+  _sectionLabel(label) {
+    return `<div style="margin:12px 0 6px;font-size:9px;letter-spacing:.08em;color:#777;">${label}</div>`;
+  }
+
+  _renderBreakdown(label, values = {}, color) {
+    const entries = Object.entries(values || {}).sort((a, b) => b[1] - a[1]).slice(0, 3);
+    if (!entries.length) return '';
+    return `<div style="display:flex;gap:5px;align-items:center;font-size:9px;margin:3px 0;color:#666;"><span style="min-width:72px">${label}</span>${entries.map(([key, value]) => `<span style="color:${color}">${this._escape(key)} ${Math.round(value)}</span>`).join('')}</div>`;
+  }
+
+  _resourceRow(label, resource = {}, color, lossKey) {
+    const current = resource?.current ?? 0;
+    const max = resource?.max || 1;
+    const pct = Math.max(0, Math.min(100, current / max * 100));
+    return `<div style="background:#1a1a2a;padding:7px;border-radius:4px;">
+      <div style="display:flex;justify-content:space-between;font-size:9px;"><span style="color:${color}">${label}</span><span>${Math.round(current)}/${Math.round(max)}</span></div>
+      <div style="height:4px;background:#09080f;margin:5px 0;"><div style="height:100%;width:${pct}%;background:${color}"></div></div>
+      <div style="color:#666;font-size:8px;">min ${resource?.min === null ? '—' : Math.round(resource.min)} · ${lossKey} ${Math.round(resource?.[lossKey] || 0)}</div>
+    </div>`;
   }
 
   _computeHealthScore(c) {
@@ -485,6 +518,70 @@ export class AgentPanel {
     }
   }
 
+  _wireTelemetryButtons() {
+    const analyzeBtn = this.el.querySelector('#hermes-analyze');
+    const applyBtn = this.el.querySelector('#hermes-apply');
+    if (analyzeBtn) analyzeBtn.onclick = () => this._requestHermesAnalysis();
+    if (applyBtn) applyBtn.onclick = () => this._applyHermesPatch(applyBtn.dataset.patchId);
+  }
+
+  async _refreshServerState() {
+    if (this._serverRefreshInFlight) return;
+    this._serverRefreshInFlight = true;
+    try {
+      const [telemetryResponse, hermesResponse] = await Promise.all([
+        fetch('http://localhost:3001/api/telemetry'),
+        fetch('http://localhost:3001/api/agents/hermes'),
+      ]);
+      if (telemetryResponse.ok) this.serverTelemetry = await telemetryResponse.json();
+      if (hermesResponse.ok) this.hermesState = await hermesResponse.json();
+      if (this.visible && this.activeTab === 'telemetry') this.render();
+    } catch {
+      this.hermesState = { ...this.hermesState, status: 'offline', lastError: 'Server unavailable on localhost:3001' };
+    } finally {
+      this._serverRefreshInFlight = false;
+    }
+  }
+
+  async _requestHermesAnalysis() {
+    this.hermesState = { ...this.hermesState, status: 'analyzing', lastError: null };
+    this.render();
+    try {
+      const response = await fetch('http://localhost:3001/api/agents/hermes/analyze', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ patchId: this.telemetry.currentPatchId }),
+      });
+      const body = await response.json();
+      if (!response.ok) throw new Error(body.error || 'Hermes analysis failed');
+      this.hermesState = { ...this.hermesState, status: 'ready', latestProposal: body, lastError: null };
+    } catch (error) {
+      this.hermesState = { ...this.hermesState, status: 'error', lastError: error.message };
+    }
+    this.render();
+  }
+
+  async _applyHermesPatch(patchId) {
+    try {
+      const response = await fetch(`http://localhost:3001/api/patches/${encodeURIComponent(patchId)}/apply`, { method: 'POST' });
+      const body = await response.json();
+      if (!response.ok) throw new Error(body.error || 'Patch apply failed');
+      this.hermesState = { ...this.hermesState, status: 'ready', latestProposal: body, lastError: null };
+    } catch (error) {
+      this.hermesState = { ...this.hermesState, status: 'error', lastError: error.message };
+    }
+    this.render();
+  }
+
+  _escape(value) {
+    return String(value ?? '')
+      .replaceAll('&', '&amp;')
+      .replaceAll('<', '&lt;')
+      .replaceAll('>', '&gt;')
+      .replaceAll('"', '&quot;')
+      .replaceAll("'", '&#039;');
+  }
+
   _download(filename, content, mime) {
     const blob = new Blob([content], { type: mime });
     const url = URL.createObjectURL(blob);
@@ -497,9 +594,19 @@ export class AgentPanel {
 
   _connectWS() {
     try {
-      this.ws = new WebSocket('ws://localhost:3001/ws/dashboard');
+      this.ws = new WebSocket('ws://localhost:3001/ws?channel=dashboard');
       this.ws.onopen = () => console.log('[AgentPanel] WS connected');
       this.ws.onclose = () => setTimeout(() => this._connectWS(), 5000);
+      this.ws.onmessage = (message) => {
+        try {
+          const data = JSON.parse(message.data);
+          if (data.type === 'telemetry:update') this.serverTelemetry = data.snapshot;
+          if (data.type === 'hermes:proposal' || data.type === 'hermes:patch-applied') {
+            this.hermesState = { ...this.hermesState, status: 'ready', latestProposal: data.proposal, lastError: null };
+          }
+          if (this.visible && this.activeTab === 'telemetry') this.render();
+        } catch { /* ignore malformed dashboard messages */ }
+      };
     } catch(e) {}
   }
 }

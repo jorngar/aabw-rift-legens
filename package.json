@@ -8,6 +8,7 @@
     "dev:server": "pnpm --filter @rift-seed/server dev",
     "dev:all": "concurrently \"pnpm dev\" \"pnpm dev:server\"",
     "build": "pnpm --filter @rift-seed/shared build && pnpm --filter @rift-seed/client build",
+    "test": "pnpm --filter @rift-seed/client test && pnpm --filter @rift-seed/server test",
     "lint": "eslint packages/*/src/**/*.{ts,js}",
     "clean": "rm -rf packages/*/dist packages/*/node_modules"
   },

@@ -76,7 +76,6 @@ async function initGame(classId = 'warrior') {
   function emitEvent(event) {
     telemetry.record(event);
     dataLog.record(event);
-    if (progressionSystem) progressionSystem.trackEvent(event);
   }
 
   abTesting.assignAll(emitEvent);
@@ -322,6 +321,10 @@ async function initGame(classId = 'warrior') {
   // ---- Session Start ----
   emitEvent(createEvent(EventType.SESSION_START, playerId, {
     abAssignments: Object.fromEntries(abTesting.assignments),
+    actorId: playerEntity.id,
+    actorType: 'player',
+    classId,
+    area: 'seed_garden',
   }));
 
   // ---- HUD Update ----

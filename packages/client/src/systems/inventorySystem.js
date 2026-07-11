@@ -49,6 +49,20 @@ export class InventorySystem {
       actorId: this.player.id, actorType: 'player', sourceType: 'item', sourceId: itemId,
       itemId, hpBefore, hpAfter: this.player.stats.hp, mpBefore, mpAfter: this.player.stats.mp,
     }));
+    if (this.player.stats.hp !== hpBefore) {
+      this.emitEvent(createEvent(EventType.RESOURCE_CHANGE, this.player.id, {
+        actorId: this.player.id, actorType: 'player', sourceType: 'item', sourceId: itemId,
+        resource: 'hp', delta: this.player.stats.hp - hpBefore,
+        hpBefore, hpAfter: this.player.stats.hp,
+      }));
+    }
+    if (this.player.stats.mp !== mpBefore) {
+      this.emitEvent(createEvent(EventType.RESOURCE_CHANGE, this.player.id, {
+        actorId: this.player.id, actorType: 'player', sourceType: 'item', sourceId: itemId,
+        resource: 'mp', delta: this.player.stats.mp - mpBefore,
+        mpBefore, mpAfter: this.player.stats.mp,
+      }));
+    }
     return true;
   }
 

@@ -175,8 +175,9 @@ function saveDB() {
   dirty = false;
 }
 
-// Auto-save every 10 seconds
-setInterval(() => { if (dirty) saveDB(); }, 10000);
+// Auto-save every 10 seconds without keeping short-lived scripts/tests alive.
+const autoSaveTimer = setInterval(() => { if (dirty) saveDB(); }, 10000);
+autoSaveTimer.unref?.();
 
 // ============================================================
 // API Functions

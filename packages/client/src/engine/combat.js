@@ -94,6 +94,10 @@ export function useSkill(attacker, skillId, target, targetPos, emitEvent, world)
     targetId: target?.id, targetType: target ? getEntityType(target) : 'none', targetPos,
     mpBefore, mpAfter,
   }));
+  emitEvent(createEvent(EventType.RESOURCE_CHANGE, attacker.id, {
+    actorId: attacker.id, actorType: getEntityType(attacker), sourceType: 'skill', sourceId: skillId,
+    resource: 'mp', delta: mpAfter - mpBefore, mpBefore, mpAfter,
+  }));
 
   let result = {};
 
