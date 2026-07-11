@@ -30,6 +30,11 @@ export function renderTileMap(assets, grid, parent) {
   // containers on rift entry/exit — without this, containers stack and later
   // ones cover merchant / player / props.
   container.__isTileMap = true;
+  // Force tiles to the BOTTOM of camera.container's sort. Without this,
+  // adding a fresh tile container on rift exit puts it at the end of
+  // children[], and since it ties zIndex=0 with player/merchant, it wins
+  // the stable sort and draws ON TOP of them. Any large negative works.
+  container.zIndex = -1000;
   const rows = grid.length;
   const cols = grid[0].length;
 
