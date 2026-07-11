@@ -6,7 +6,7 @@ import { RIFT_WAVES, ENEMIES } from '@shared/config.js';
 import { tileDistance, tileToScreen } from '../engine/isometric.js';
 import { generateDungeonMap, renderTileMap } from '../engine/tilemap.js';
 import { createEntity } from '../engine/ecs.js';
-import * as PIXI from 'pixi.js';
+import { createStatefulSprite, enemyAnimationProfile } from './animationSystem.js';
 
 export class RiftSystem {
   constructor(player, world, assets, camera, emitEvent, progression) {
@@ -117,10 +117,12 @@ export class RiftSystem {
 
   _spawnEnemy(type, x, y) {
     const def = ENEMIES[type] || ENEMIES.shadowBeast;
-    const sheetKey = type === 'shadowBeast' ? 'skeleton' : 'ogre';
-    const sprite = this.assets.anim(sheetKey, 'frame_', 8, true);
-    sprite.anchor.set(0.5, 0.8);
-    sprite.scale.set(0.7);
+    const sheetKey = type === 'shadowBeast' ? 'werewolf' : 'heroHeavy';
+    const visual = createStatefulSprite(this.assets, enemyAnimationProfile(sheetKey), {
+      scale: type === 'riftKnight' ? 1.05 : 0.9,
+      anchorY: 0.82,
+    });
+    const sprite = visual.sprite;
     const entity = createEntity({
       isEnemy: true, enemyType: type, name: def.name,
       pos: { x, y }, spawnPos: { x, y }, targetPos: null, path: null,
@@ -129,8 +131,8 @@ export class RiftSystem {
       attackCooldownMs: def.attackCooldownMs, attackRange: def.attackRange,
       stats: { hp: def.hp, maxHp: def.hp, damage: def.damage, speed: def.speed },
       sprite,
-      walkAnim: Object.values(this.assets.sheets[sheetKey].textures).sort(),
-      idleAnim: Object.values(this.assets.sheets[sheetKey].textures).sort().slice(0, 4),
+      animations: visual.animations,
+      animationState: 'idle',
     });
 
     this.world.addEntity(entity);

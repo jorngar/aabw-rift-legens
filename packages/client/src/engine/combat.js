@@ -265,6 +265,7 @@ function emitCombatOutcome(attacker, victim, sourceId, emitEvent, sourceType = n
 export function applyDamage(entity, damage) {
   if (!entity.stats) return false;
   entity.stats.hp = Math.max(0, entity.stats.hp - damage);
+  entity.hitReactUntil = Date.now() + 140;
   return entity.stats.hp <= 0;
 }
 

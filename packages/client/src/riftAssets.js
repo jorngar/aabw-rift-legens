@@ -53,16 +53,22 @@ export async function loadRiftAssets() {
 
     /** Build an animated sprite from a sheet's frames, in order. */
     anim(sheetKey, framePrefix = 'frame_', fps = 12, loop = true) {
-      const ss = sheets[sheetKey];
-      const frameIds = Object.keys(ss.textures)
-        .filter(k => k.startsWith(framePrefix))
-        .sort();
-      const textures = frameIds.map(id => ss.textures[id]);
+      const textures = this.textures(sheetKey, framePrefix);
       const sprite = new PIXI.AnimatedSprite(textures);
       sprite.animationSpeed = fps / 60;
       sprite.loop = loop;
       sprite.play();
       return sprite;
+    },
+
+    /** Get an ordered texture array, optionally sliced by zero-based frame range. */
+    textures(sheetKey, framePrefix = 'frame_', start = 0, end = undefined) {
+      const ss = sheets[sheetKey];
+      if (!ss) throw new Error(`Unknown sprite sheet: ${sheetKey}`);
+      const frameIds = Object.keys(ss.textures)
+        .filter(k => k.startsWith(framePrefix))
+        .sort();
+      return frameIds.slice(start, end).map(id => ss.textures[id]);
     },
 
     /** Get a single named frame (for static icons, UI, etc.). */
