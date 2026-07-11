@@ -3,10 +3,14 @@
 // helpers, and deterministic player→variant hashing.
 // ============================================================
 
-/** Tile-type integers stored in map.tiles[y][x]. */
+/**
+ * Tile-type integers stored in map.tiles[y][x].
+ * WALL=5 matches the client renderer's TILE_TYPES.WALL palette entry
+ * (packages/client/src/engine/tilemap.js). Server treats them as opaque.
+ */
 export const TILE_TYPES = Object.freeze({
-  FLOOR: 0,
-  WALL:  1,
+  FLOOR: 0,   // renders as GRASS in the client palette
+  WALL:  5,   // renders as WALL in the client palette
 });
 
 // ASCII legend used by parseLayout(). Every marker cell is still walkable —

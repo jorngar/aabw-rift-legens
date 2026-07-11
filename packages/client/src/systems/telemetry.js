@@ -64,6 +64,8 @@ export class GameTelemetrySDK {
     this._lastStateSample = 0;
     this._eventSequence = 0;
     this._url = null;
+    /** @type {Map<string, (msg:object)=>void>} */
+    this._messageHandlers = new Map();
   }
 
   connect(url) {
@@ -82,10 +84,55 @@ export class GameTelemetrySDK {
         setTimeout(() => this.connect(this._url), 3000);
       };
       this.ws.onerror = () => { this.connectionState = 'error'; };
+      // Route incoming server messages to any registered listeners.
+      this.ws.onmessage = (ev) => {
+        let msg;
+        try { msg = JSON.parse(ev.data); } catch { return; }
+        const handler = this._messageHandlers.get(msg.type);
+        if (handler) handler(msg);
+      };
     } catch (e) {
       this.connectionState = 'error';
       console.warn('[Telemetry SDK] WebSocket failed:', e);
     }
+  }
+
+  /** Register a handler for a specific server-sent message type. */
+  onServerMessage(type, handler) {
+    this._messageHandlers.set(type, handler);
+  }
+
+  /**
+   * Send `session:hello` and resolve with the server's `session:init`
+   * payload ({ sessionId, patchId, patchName, variant, mapConfig }).
+   * Waits for the WS to open. Rejects on session:error or timeout.
+   */
+  handshake(playerId, { timeoutMs = 5000 } = {}) {
+    return new Promise((resolve, reject) => {
+      const timer = setTimeout(() => {
+        this._messageHandlers.delete('session:init');
+        this._messageHandlers.delete('session:error');
+        reject(new Error('session handshake timed out'));
+      }, timeoutMs);
+
+      this.onServerMessage('session:init', (msg) => {
+        clearTimeout(timer);
+        this._messageHandlers.delete('session:init');
+        this._messageHandlers.delete('session:error');
+        this.setSessionId(msg.sessionId);
+        resolve(msg);
+      });
+      this.onServerMessage('session:error', (msg) => {
+        clearTimeout(timer);
+        this._messageHandlers.delete('session:init');
+        this._messageHandlers.delete('session:error');
+        reject(new Error(msg.reason || 'session:error'));
+      });
+
+      const send = () => this.ws.send(JSON.stringify({ type: 'session:hello', playerId }));
+      if (this.ws?.readyState === WebSocket.OPEN) send();
+      else this.ws.addEventListener('open', send, { once: true });
+    });
   }
 
   /**

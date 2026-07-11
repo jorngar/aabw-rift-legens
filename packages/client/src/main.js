@@ -11,6 +11,8 @@ import { movementSystem, spriteSyncSystem, enemyAISystem, depthSortSystem, playe
 import { TelemetrySystem } from './systems/telemetry.js';
 import { ABTestingSystem } from './systems/ab-testing.js';
 import { DataLoggingSystem } from './systems/data-logging.js';
+import { TrajectorySampler } from './systems/trajectory-sampler.js';
+import { DefectDetector } from './systems/defect-detector.js';
 import { ProgressionSystem } from './systems/progression.js';
 import { RiftSystem } from './systems/riftSystem.js';
 import { InventorySystem } from './systems/inventorySystem.js';
@@ -77,7 +79,10 @@ async function initGame(classId = 'warrior') {
   const runtimePlayerDefaults = await loadRuntimeBalance();
 
   // ---- Init Systems ----
-  const playerId = 'player_' + Math.random().toString(36).slice(2, 8);
+  // A/B: playerId comes from URL (?playerId=alice) so we can force cohort
+  // splits by opening multiple browser tabs. Falls back to random.
+  const abPlayerId = new URLSearchParams(window.location.search).get('playerId');
+  const playerId = abPlayerId || ('player_' + Math.random().toString(36).slice(2, 8));
   const telemetry = new TelemetrySystem({
     playerId,
     patchId: 'v0.1.0',
@@ -86,7 +91,7 @@ async function initGame(classId = 'warrior') {
   const abTesting = new ABTestingSystem(playerId);
   const dataLog = new DataLoggingSystem();
 
-  telemetry.connect('ws://localhost:3001/ws?channel=telemetry');
+  telemetry.connect(`ws://localhost:3001/ws?channel=telemetry&playerId=${encodeURIComponent(playerId)}`);
   dataLog.connect('ws://localhost:3001/ws?channel=data');
 
   let progressionSystem = null;
@@ -97,9 +102,22 @@ async function initGame(classId = 'warrior') {
 
   abTesting.assignAll(emitEvent);
 
+  // A/B: request server-side variant + map. Non-fatal if server is down —
+  // fall back to procedural garden so the game still boots offline.
+  let abAssignment = null;
+  try {
+    abAssignment = await telemetry.handshake(playerId, { timeoutMs: 4000 });
+    console.log(`[A/B] variant ${abAssignment.variant} (${abAssignment.patchName}) session=${abAssignment.sessionId}`);
+  } catch (err) {
+    console.warn('[A/B] handshake failed, falling back to procedural map:', err.message);
+  }
+
   // ---- Create World ----
   const world = new World();
-  const grid = generateGardenMap(20, 20);
+  // Use server-assigned garden map if available; otherwise fall back to
+  // the legacy procedural 20x20.
+  const gardenMap = abAssignment?.mapConfig?.garden;
+  const grid = gardenMap ? gardenMap.tiles : generateGardenMap(20, 20);
   world.grid = grid;
 
   // ---- Render Tile Map ----
@@ -111,8 +129,9 @@ async function initGame(classId = 'warrior') {
 
   app.stage.addChild(camera.container);
 
-  // Snap camera to player start position immediately
-  const startScreen = tileToScreen(8, 8);
+  // Snap camera to the assigned spawn (or legacy 8,8 fallback).
+  const spawnTile = gardenMap?.spawn || { x: 8, y: 8 };
+  const startScreen = tileToScreen(spawnTile.x, spawnTile.y);
   camera.targetX = startScreen.x;
   camera.targetY = startScreen.y;
   camera.container.x = app.screen.width / 2 - startScreen.x;
@@ -155,7 +174,7 @@ async function initGame(classId = 'warrior') {
   const playerEntity = createEntity({
     isPlayer: true,
     name: 'SEED Cadet',
-    pos: { x: 8, y: 8 },
+    pos: { x: spawnTile.x, y: spawnTile.y },
     targetPos: null,
     path: null,
     direction: 'S',
@@ -190,7 +209,11 @@ async function initGame(classId = 'warrior') {
   const agentPanel = new AgentPanel(telemetry, abTesting, dataLog, progressionSystem);
   agentPanel.init();
 
-  const shopUI = new ShopUI(inventorySystem);
+  const shopUI = new ShopUI(inventorySystem, {
+    emitEvent,
+    playerId,
+    getPlayerPos: () => playerEntity.pos,
+  });
   shopUI.init();
 
   const purchaseUI = new PurchaseSimulator(inventorySystem, emitEvent);
@@ -280,13 +303,49 @@ async function initGame(classId = 'warrior') {
   }
 
   if (!riftSystem.inDungeon) {
-    // Spawn enemies AWAY from player start (8,8) — safe zone radius of 5
-    spawnEnemy('shadowBeast', 3, 3);     // upper-left corner
-    spawnEnemy('shadowBeast', 14, 4);    // upper-right
-    spawnEnemy('shadowBeast', 3, 14);    // lower-left
-    spawnEnemy('shadowBeast', 14, 14);   // lower-right
-    spawnEnemy('shadowBeast', 10, 3);    // near portal
-    spawnEnemy('riftKnight', 15, 10);    // far right boss
+    if (gardenMap?.enemySpawns?.length) {
+      // Use the assigned patch's hand-designed enemy positions.
+      for (const s of gardenMap.enemySpawns) {
+        spawnEnemy(s.type || 'shadowBeast', s.x, s.y);
+      }
+    } else {
+      // Legacy 20x20 procedural fallback: enemies AWAY from player start.
+      spawnEnemy('shadowBeast', 3, 3);
+      spawnEnemy('shadowBeast', 14, 4);
+      spawnEnemy('shadowBeast', 3, 14);
+      spawnEnemy('shadowBeast', 14, 14);
+      spawnEnemy('shadowBeast', 10, 3);
+      spawnEnemy('riftKnight', 15, 10);
+    }
+  }
+
+  // ---- A/B Data Collection Samplers ----
+  // Only meaningful once we have a real session (i.e. the handshake worked).
+  // trajectory-sampler produces the canonical path artifact; defect-detector
+  // flags stuck / errored playthroughs.
+  let trajSampler = null;
+  let defectDetector = null;
+  if (abAssignment) {
+    trajSampler = new TrajectorySampler({
+      player: playerEntity,
+      emit: emitEvent,
+      playerId,
+      getZone: () => (riftSystem.inDungeon ? 'dungeon' : 'garden'),
+    });
+    trajSampler.start();
+    defectDetector = new DefectDetector({
+      player: playerEntity,
+      emit: emitEvent,
+      playerId,
+    });
+    defectDetector.start();
+
+    // Small HUD chip so testers can visually confirm the variant.
+    const chip = document.createElement('div');
+    chip.textContent = `${abAssignment.variant} · ${abAssignment.patchName}`;
+    chip.title = `session ${abAssignment.sessionId}`;
+    chip.style.cssText = 'position:fixed;bottom:8px;left:8px;padding:4px 10px;background:rgba(10,6,18,0.85);color:#e8ff47;font:11px/1.2 monospace;border:1px solid #e8ff47;border-radius:4px;z-index:900;pointer-events:none;';
+    document.body.appendChild(chip);
   }
 
   // ---- Portal (animated CSS effect) ----
