@@ -1,0 +1,88 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>RiftSEED — Telemetry Agent</title>
+  <link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+  <header class="topbar">
+    <div class="brand">
+      <span class="logo">◈</span>
+      <div>
+        <h1>RiftSEED Telemetry Agent</h1>
+        <p class="sub">Live-service balance insights · patch implementation & player analytics</p>
+      </div>
+    </div>
+    <div class="status-pills" id="status-pills">
+      <span class="pill" id="pill-health">health: —</span>
+      <span class="pill" id="pill-events">events: —</span>
+      <span class="pill" id="pill-matches">matches: —</span>
+    </div>
+  </header>
+
+  <nav class="tabs" role="tablist">
+    <button class="tab active" data-tab="patch" role="tab">⚙ Patch Implementation</button>
+    <button class="tab" data-tab="analytics" role="tab">📊 Recommendations &amp; Analytics</button>
+  </nav>
+
+  <main>
+    <!-- TAB 1: PATCH IMPLEMENTATION -->
+    <section class="panel active" id="tab-patch">
+      <div class="section-head">
+        <h2>Patch Implementation</h2>
+        <div class="actions">
+          <button id="btn-analyze" class="btn primary">Generate Patch</button>
+          <button id="btn-refresh" class="btn">Refresh</button>
+        </div>
+      </div>
+      <p class="hint">Every change below is grounded in live database balance values and validated to a ±30% safety band before it can be deployed.</p>
+      <div id="patch-list" class="patch-list">
+        <div class="empty">No patches yet. Click <b>Generate Patch</b> to run the Hermes balance agent on current telemetry.</div>
+      </div>
+
+      <h3 class="subhead">Deployed Patch History <span class="muted">(applied to live balance)</span></h3>
+      <div id="adjustments-list" class="adjustments"></div>
+    </section>
+
+    <!-- TAB 2: RECOMMENDATIONS & ANALYTICS -->
+    <section class="panel" id="tab-analytics">
+      <div class="section-head">
+        <h2>Recommendations &amp; Analytics</h2>
+        <button id="btn-refresh-2" class="btn">Refresh</button>
+      </div>
+
+      <div class="cards" id="stat-cards"></div>
+
+      <h3 class="subhead">Player Usage by Class</h3>
+      <div class="chart-grid">
+        <div class="chart-card">
+          <h4>Kill / Death ratio</h4>
+          <div id="chart-kd" class="chart"></div>
+        </div>
+        <div class="chart-card">
+          <h4>Avg Damage Dealt vs Taken</h4>
+          <div id="chart-damage" class="chart"></div>
+        </div>
+      </div>
+      <div class="chart-card wide">
+        <h4>Match Volume by Class</h4>
+        <div id="chart-volume" class="chart"></div>
+      </div>
+
+      <h3 class="subhead">Deployed Items &amp; Weapons — Impact on the Game</h3>
+      <p class="hint">Items ranked by estimated in-game impact (derived from damage, healing, mobility and price). Use this to spot over- or under-tuned gear.</p>
+      <div id="chart-items" class="chart"></div>
+      <div id="item-table" class="item-table"></div>
+
+      <h3 class="subhead">Recommendations</h3>
+      <div id="recommendations" class="recs"></div>
+    </section>
+  </main>
+
+  <footer class="footer">RiftSEED · Telemetry Agent powered by live SQLite telemetry · <span id="gen-time">—</span></footer>
+
+  <script src="app.js"></script>
+</body>
+</html>

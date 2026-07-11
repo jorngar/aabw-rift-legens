@@ -30,7 +30,9 @@ export const PLAYER_DEFAULTS = Object.freeze({
 /** Enemy definitions */
 export const ENEMIES = Object.freeze({
   shadowBeast: {
-    name: 'Shadow Beast',
+    // Keep the stable telemetry/config key while presenting the new pack's
+    // creature honestly in the game UI.
+    name: 'Rift Slime',
     hp: 200,
     damage: 3,
     speed: 1.5,

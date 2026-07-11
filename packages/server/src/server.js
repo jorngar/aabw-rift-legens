@@ -4,13 +4,15 @@
 import express from 'express';
 import cors from 'cors';
 import { createServer } from 'http';
+import { join, dirname } from 'path';
+import { fileURLToPath } from 'url';
 import { WebSocketServer, WebSocket } from 'ws';
 import { SERVER } from '@rift-seed/shared/config';
 import { TelemetryAgent } from './agents/telemetry-agent.js';
 import { ABTestingAgent } from './agents/ab-testing-agent.js';
 import { DataCleaningAgent } from './agents/data-cleaning-agent.js';
 import { HermesBalanceAgent } from './agents/hermes-balance-agent.js';
-import { getBalance, setBalance, getAllBalance, getMatchHistory, getAdjustments, getClasses, getClass, getAggregateStats, recordMatch, initDB } from './database.js';
+import { getBalance, setBalance, getAllBalance, getMatchHistory, getAdjustments, getClasses, getClass, getAggregateStats, getDashboardData, saveDB, recordMatch, initDB } from './database.js';
 import { getRuntimeConfig } from './runtime-config.js';
 import { verifyConnection as verifyPostgresConnection } from './db/pool.js';
 import { seedPatches } from './patch-seeder.js';
@@ -21,6 +23,13 @@ import { fetchAllData, fetchSummary } from './ab-data-viewer.js';
 const app = express();
 app.use(cors());
 app.use(express.json());
+// navigator.sendBeacon posts JSON with a text/plain content type on page unload.
+app.use(express.text({ type: 'text/plain' }));
+
+// Serve the telemetry agent web dashboard (static files).
+const DASHBOARD_DIR = join(dirname(fileURLToPath(import.meta.url)), '..', 'public', 'dashboard');
+app.use('/dashboard', express.static(DASHBOARD_DIR));
+app.get('/dashboard', (req, res) => res.redirect('/dashboard/'));
 
 const httpServer = createServer(app);
 const wss = new WebSocketServer({ server: httpServer, path: '/ws' });
@@ -261,6 +270,7 @@ app.post('/api/patches/:id/apply', (req, res) => {
   try {
     const proposal = hermesAgent.applyProposal(req.params.id);
     broadcast('dashboard', { type: 'hermes:patch-applied', proposal });
+    saveDB(); // persist the deployed balance change immediately
     res.json(proposal);
   } catch (error) {
     const status = error.message.includes('not found') ? 404 : 409;
@@ -295,7 +305,15 @@ app.get('/api/matches', (req, res) => {
 });
 
 app.post('/api/matches', (req, res) => {
-  recordMatch(req.body);
+  let payload = req.body;
+  if (typeof payload === 'string') {
+    try { payload = JSON.parse(payload); } catch { payload = null; }
+  }
+  if (!payload || typeof payload !== 'object' || !payload.playerId) {
+    return res.status(400).json({ error: 'invalid match payload' });
+  }
+  recordMatch(payload);
+  saveDB();
   res.json({ recorded: true });
 });
 
@@ -316,6 +334,12 @@ app.get('/api/classes/:id', (req, res) => {
 
 app.get('/api/stats', (req, res) => {
   res.json(getAggregateStats());
+});
+
+// Telemetry agent web dashboard data: patch history, recommendations context,
+// player usage, deployed items and their estimated impact.
+app.get('/api/dashboard/data', (req, res) => {
+  res.json(getDashboardData());
 });
 
 // ---- Start ----
@@ -341,6 +365,15 @@ async function start() {
     console.log(`[RiftSEED Server] Classes: ${getClasses().map(c => c.name).join(', ')}`);
   });
 }
+
+// Persist the database on shutdown so patches and match records are not lost.
+function shutdown() {
+  console.log('[RiftSEED Server] Saving database and shutting down…');
+  try { saveDB(); } catch (err) { console.error('[RiftSEED Server] Save failed:', err.message); }
+  process.exit(0);
+}
+process.on('SIGINT', shutdown);
+process.on('SIGTERM', shutdown);
 
 start().catch(err => {
   console.error('[RiftSEED Server] Failed to start:', err);

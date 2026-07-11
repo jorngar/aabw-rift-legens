@@ -1,0 +1,114 @@
+{
+  "frames": {
+    "frame_001": {
+      "frame": {
+        "x": 0,
+        "y": 0,
+        "w": 638,
+        "h": 643
+      },
+      "rotated": false,
+      "trimmed": false,
+      "spriteSourceSize": {
+        "x": 0,
+        "y": 0,
+        "w": 638,
+        "h": 643
+      },
+      "sourceSize": {
+        "w": 638,
+        "h": 643
+      }
+    },
+    "frame_002": {
+      "frame": {
+        "x": 638,
+        "y": 0,
+        "w": 638,
+        "h": 643
+      },
+      "rotated": false,
+      "trimmed": false,
+      "spriteSourceSize": {
+        "x": 0,
+        "y": 0,
+        "w": 638,
+        "h": 643
+      },
+      "sourceSize": {
+        "w": 638,
+        "h": 643
+      }
+    },
+    "frame_003": {
+      "frame": {
+        "x": 1276,
+        "y": 0,
+        "w": 638,
+        "h": 643
+      },
+      "rotated": false,
+      "trimmed": false,
+      "spriteSourceSize": {
+        "x": 0,
+        "y": 0,
+        "w": 638,
+        "h": 643
+      },
+      "sourceSize": {
+        "w": 638,
+        "h": 643
+      }
+    },
+    "frame_004": {
+      "frame": {
+        "x": 1914,
+        "y": 0,
+        "w": 638,
+        "h": 643
+      },
+      "rotated": false,
+      "trimmed": false,
+      "spriteSourceSize": {
+        "x": 0,
+        "y": 0,
+        "w": 638,
+        "h": 643
+      },
+      "sourceSize": {
+        "w": 638,
+        "h": 643
+      }
+    },
+    "frame_005": {
+      "frame": {
+        "x": 2552,
+        "y": 0,
+        "w": 638,
+        "h": 643
+      },
+      "rotated": false,
+      "trimmed": false,
+      "spriteSourceSize": {
+        "x": 0,
+        "y": 0,
+        "w": 638,
+        "h": 643
+      },
+      "sourceSize": {
+        "w": 638,
+        "h": 643
+      }
+    }
+  },
+  "meta": {
+    "app": "rift-seed-chibi-converter",
+    "image": "attack.png",
+    "format": "RGBA8888",
+    "size": {
+      "w": 3190,
+      "h": 643
+    },
+    "scale": "1"
+  }
+}

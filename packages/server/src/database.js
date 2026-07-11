@@ -179,6 +179,17 @@ function saveDB() {
 const autoSaveTimer = setInterval(() => { if (dirty) saveDB(); }, 10000);
 autoSaveTimer.unref?.();
 
+// Flush any pending writes to disk before the process exits so balance patches
+// and match records are not lost when the server is stopped/killed.
+function flushOnExit() {
+  if (dirty) {
+    try { saveDB(); } catch { /* best effort during shutdown */ }
+  }
+}
+process.on('exit', flushOnExit);
+process.on('SIGINT', () => { flushOnExit(); process.exit(0); });
+process.on('SIGTERM', () => { flushOnExit(); process.exit(0); });
+
 // ============================================================
 // API Functions
 // ============================================================
@@ -220,8 +231,13 @@ export function getAllBalance(category) {
 
 export function recordMatch(matchData) {
   if (!db) return;
+  // Upsert per session: clients re-send cumulative session stats periodically,
+  // so replace any earlier row for the same session instead of duplicating it.
+  if (matchData.playerId && matchData.sessionStart) {
+    db.run('DELETE FROM match_history WHERE player_id = ? AND session_start = ?', [matchData.playerId, matchData.sessionStart]);
+  }
   db.run(`INSERT INTO match_history (player_id, session_start, session_end, kills, deaths, gold_earned, xp_earned, level_reached, rank_reached, waves_cleared, skills_used, damage_dealt, damage_taken, duration_seconds, class_type) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-    [matchData.playerId, matchData.sessionStart, matchData.sessionEnd || new Date().toISOString(),
+    [matchData.playerId, matchData.sessionStart || new Date().toISOString(), matchData.sessionEnd || new Date().toISOString(),
      matchData.kills || 0, matchData.deaths || 0, matchData.goldEarned || 0,
      matchData.xpEarned || 0, matchData.levelReached || 1, matchData.rankReached || 'D',
      matchData.wavesCleared || 0, matchData.skillsUsed || 0, matchData.damageDealt || 0,
@@ -285,4 +301,85 @@ export function getAggregateStats() {
   return obj;
 }
 
-export { db };
+/**
+ * Aggregate everything the telemetry dashboard web pages need in one call:
+ * player usage from match history, deployed items/weapons (with their balance
+ * impact), the Hermes patch history (telemetry_adjustments), and current balance.
+ */
+export function getDashboardData() {
+  const agg = getAggregateStats();
+  const matches = getMatchHistory(500);
+
+  // Class distribution + per-class performance from match history.
+  const classStats = {};
+  let totalDuration = 0;
+  for (const m of matches) {
+    const cls = m.class_type || 'warrior';
+    if (!classStats[cls]) {
+      classStats[cls] = { class: cls, matches: 0, kills: 0, deaths: 0, damageDealt: 0, damageTaken: 0, totalDuration: 0 };
+    }
+    const s = classStats[cls];
+    s.matches++;
+    s.kills += m.kills || 0;
+    s.deaths += m.deaths || 0;
+    s.damageDealt += m.damage_dealt || 0;
+    s.damageTaken += m.damage_taken || 0;
+    s.totalDuration += m.duration_seconds || 0;
+  }
+  const playerUsage = Object.values(classStats).map(s => ({
+    class: s.class,
+    matches: s.matches,
+    avgKills: s.matches ? Number((s.kills / s.matches).toFixed(1)) : 0,
+    avgDeaths: s.matches ? Number((s.deaths / s.matches).toFixed(1)) : 0,
+    avgDamageDealt: s.matches ? Number((s.damageDealt / s.matches).toFixed(0)) : 0,
+    avgDamageTaken: s.matches ? Number((s.damageTaken / s.matches).toFixed(0)) : 0,
+    avgDurationMin: s.matches ? Number((s.totalDuration / s.matches / 60).toFixed(1)) : 0,
+    killDeathRatio: s.deaths > 0 ? Number((s.kills / s.deaths).toFixed(2)) : s.kills,
+  }));
+
+  // Deployed items + weapons, joined to live balance where it exists, plus a
+  // rough "impact" estimate so the dashboard can rank them.
+  const balance = getAllBalance();
+  const deployedItems = [
+    ...Object.entries(ITEMS_FOR_DASHBOARD.items).map(([id, it]) => ({ id, ...it, kind: 'item' })),
+    ...Object.entries(ITEMS_FOR_DASHBOARD.weapons).map(([id, w]) => ({ id, ...w, kind: 'weapon' })),
+  ].map(item => {
+    // Estimate impact: consumables scale with price/heal, weapons with damage.
+    let impact = 0;
+    if (item.kind === 'weapon') impact = Number((item.damage || 0) + (item.speed || 0) * 50 + (item.skillDmg || 0));
+    else impact = Number(((item.heal || 0) + (item.mana || 0)) / 10 + (item.price || 0) / 25);
+    return { ...item, liveBalance: balance[item.id] ?? null, estimatedImpact: Number(impact.toFixed(1)) };
+  }).sort((a, b) => b.estimatedImpact - a.estimatedImpact);
+
+  return {
+    generatedAt: Date.now(),
+    summary: agg,
+    matchCount: matches.length,
+    playerUsage,
+    deployedItems,
+    balance: balance,
+    adjustments: getAdjustments(50),
+  };
+}
+
+// Static catalog mirror for the dashboard (kept in sync with @rift-seed/shared/config).
+const ITEMS_FOR_DASHBOARD = {
+  items: {
+    health_potion: { name: 'Health Potion', type: 'consumable', heal: 50, price: 15 },
+    mana_potion: { name: 'Mana Potion', type: 'consumable', mana: 30, price: 15 },
+    rift_shard: { name: 'Rift Shard', type: 'consumable', price: 40 },
+    scroll: { name: 'Scroll', type: 'misc', price: 10 },
+    key: { name: 'Rift Key', type: 'key', price: 50 },
+    ether_crystal: { name: 'Ether Crystal', type: 'material', price: 30 },
+    rune_stone: { name: 'Rune Stone', type: 'material', price: 25 },
+  },
+  weapons: {
+    gunblade: { name: 'Gunblade', damage: 15, speed: 0, price: 200 },
+    rift_staff: { name: 'Rift Staff', damage: 10, maxMp: 20, skillDmg: 10, price: 300 },
+    pistol: { name: 'Pistol', damage: 10, speed: 0.2, price: 150 },
+    seed_rifle: { name: 'SEED Rifle', damage: 25, speed: -0.3, price: 350 },
+    rune_daggers: { name: 'Rune Daggers', damage: 8, speed: 0.5, price: 250 },
+  },
+};
+
+export { db, saveDB };
