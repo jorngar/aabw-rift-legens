@@ -167,7 +167,7 @@ async function initGame(classId = 'warrior') {
   // ---- Create Player — explicit idle / move / attack states ----
   const playerVisual = createStatefulSprite(assets, playerAnimationProfile(classId), {
     scale: 2.2,
-    anchorY: 0.71,
+    anchorY: 0.65,
   });
   const playerSprite = playerVisual.sprite;
 
