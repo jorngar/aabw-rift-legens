@@ -91,3 +91,25 @@ export async function fetchSummary() {
   `);
   return rows;
 }
+
+/**
+ * Per (patch, variant, layout_id) breakdown of rift entries.
+ * Uses the `layoutId` payload field emitted by RiftSystem.enterRift on the
+ * client; each rift entry is one row's contribution to `rift_entries`.
+ * Falls back to 'unknown' for pre-rotation data or events missing the
+ * field. Consumed by the /api/ab-tests/layouts endpoint and the SOP.
+ */
+export async function fetchLayoutBreakdown() {
+  const { rows } = await pool.query(`
+    SELECT s.patch_id, s.variant,
+           COALESCE(e.payload->>'layoutId', 'unknown') AS layout_id,
+           COUNT(*)::int AS rift_entries,
+           COUNT(DISTINCT s.id)::int AS distinct_sessions
+      FROM events e
+      JOIN sessions s ON s.id = e.session_id
+     WHERE e.event_type = 'rift:enter'
+     GROUP BY s.patch_id, s.variant, e.payload->>'layoutId'
+     ORDER BY s.patch_id, s.variant, layout_id
+  `);
+  return rows;
+}

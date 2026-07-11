@@ -21,7 +21,7 @@ import { applySchema } from './db/migrate.js';
 import { seedPatches } from './patch-seeder.js';
 import { SessionManager } from './session-manager.js';
 import { compressSession } from './path-compressor.js';
-import { fetchAllData, fetchSummary } from './ab-data-viewer.js';
+import { fetchAllData, fetchSummary, fetchLayoutBreakdown } from './ab-data-viewer.js';
 import { fetchBreakdowns } from './ab-breakdowns.js';
 
 const app = express();
@@ -239,6 +239,18 @@ app.get('/api/ab-tests/summary', async (req, res) => {
 app.get('/api/ab-tests/breakdowns', async (req, res) => {
   try {
     res.json(await fetchBreakdowns());
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// Per (patch, variant, layout_id) rift-entry breakdown — surfaces which
+// specific dungeon layout each rift run picked so the SOP can drill down
+// past the variant average. Reads events.payload->>'layoutId' emitted by
+// RiftSystem.enterRift, so pre-rotation data groups under 'unknown'.
+app.get('/api/ab-tests/layouts', async (req, res) => {
+  try {
+    res.json(await fetchLayoutBreakdown());
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
