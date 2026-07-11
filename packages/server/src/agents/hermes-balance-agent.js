@@ -3,7 +3,21 @@
 // ============================================================
 import { spawn } from 'child_process';
 import { randomUUID } from 'crypto';
+import { existsSync } from 'fs';
 import { getAllBalance, getBalance, setBalance } from '../database.js';
+
+const USER_HERMES_BIN = '/Users/shojishinzo/.local/bin/hermes';
+
+// Resolve the Hermes binary robustly. The agent used to spawn a bare 'hermes'
+// and rely on PATH, which fails when the server is launched from an
+// environment without the user's local bin on PATH. Prefer an explicit
+// override, then the known install location, then PATH as a fallback.
+function resolveHermesBinary(configured) {
+  if (configured && configured !== 'hermes') return configured;
+  if (process.env.HERMES_BIN) return process.env.HERMES_BIN;
+  if (existsSync(USER_HERMES_BIN)) return USER_HERMES_BIN;
+  return 'hermes';
+}
 
 const PATCH_LIMITS = Object.freeze({
   'player.base_hp': [100, 1000],
@@ -54,27 +68,67 @@ function runHermes(binary, prompt, timeoutMs) {
 }
 
 function parseJsonResponse(output) {
+  // Prefer a fenced ```json block.
   const fenced = output.match(/```(?:json)?\s*([\s\S]*?)```/i)?.[1];
-  const candidate = fenced || output.slice(output.indexOf('{'), output.lastIndexOf('}') + 1);
-  if (!candidate) throw new Error('Hermes returned no JSON object');
-  try {
-    return JSON.parse(candidate);
-  } catch (error) {
-    throw new Error(`Hermes returned invalid JSON: ${error.message}`);
+  const source = fenced || output;
+  if (!source.includes('{')) throw new Error('Hermes returned no JSON object');
+
+  // Extract the first complete {...} object by tracking brace depth, so any
+  // trailing prose the model appends after the JSON is ignored.
+  const start = source.indexOf('{');
+  let depth = 0;
+  let inString = false;
+  let escaped = false;
+  for (let i = start; i < source.length; i++) {
+    const ch = source[i];
+    if (inString) {
+      if (escaped) escaped = false;
+      else if (ch === '\\') escaped = true;
+      else if (ch === '"') inString = false;
+      continue;
+    }
+    if (ch === '"') inString = true;
+    else if (ch === '{') depth++;
+    else if (ch === '}') {
+      depth--;
+      if (depth === 0) {
+        const candidate = source.slice(start, i + 1);
+        try {
+          return JSON.parse(candidate);
+        } catch (error) {
+          throw new Error(`Hermes returned invalid JSON: ${error.message}`);
+        }
+      }
+    }
   }
+  throw new Error('Hermes returned an unterminated JSON object');
 }
 
 function buildPrompt(evidence, balance) {
-  const allowed = Object.entries(PATCH_LIMITS).map(([key, [min, max]]) => ({ key, current: balance[key], min, max }));
-  return `You are a game balance and retention analyst. Analyze the telemetry evidence and propose a conservative patch.
+  const allowed = Object.entries(PATCH_LIMITS).map(([key, [min, max]]) => ({
+    key,
+    current: Number(balance[key] ?? getBalance(key) ?? min),
+    min,
+    max,
+  }));
+  // The model was previously hallucinating the current values and then emitting
+  // patches that bore no relation to the live database. We now surface the real
+  // current value for every allowed key and require the model to ground every
+  // change in that number (it may only move within the stated hard bounds).
+  const currentLines = allowed.map(a => `- ${a.key} = ${a.current} (hard bounds ${a.min}..${a.max})`).join('\n');
+  return `You are a game balance and retention analyst. Propose a conservative patch grounded ONLY in the live telemetry evidence and the CURRENT values below.
 
-Rules:
-- Output JSON only. Do not use markdown.
-- Ground every change in a numeric telemetry signal.
+CURRENT BALANCE VALUES (these are the real, live database values — do not invent others):
+${currentLines}
+
+RULES:
+- Output JSON only. No markdown, no commentary outside the JSON.
+- Every "proposedValue" MUST be derived from the matching CURRENT value listed above. You may propose at most a 30% change from current.
+- Ground every change in a numeric telemetry signal from the evidence.
 - Treat fewer than 30 events or fewer than 3 sessions as weak evidence and lower confidence.
 - Do not claim retention improved; state the expected behavior to validate in a follow-up cohort.
 - Propose at most 4 changes and only use keys from allowed_changes.
-- Prefer changes within 15% of current values. The host will enforce a hard 30% maximum.
+- Prefer changes within 15% of current values. The host enforces a hard 30% maximum.
 
 Required JSON shape:
 {"summary":"...","rationale":"...","expectedImpact":"...","confidence":0.0,"changes":[{"key":"...","proposedValue":0,"reason":"...","evidence":["metric=value"]}]}
@@ -84,9 +138,9 @@ allowed_changes=${JSON.stringify(allowed)}`;
 }
 
 export class HermesBalanceAgent {
-  constructor({ telemetryAgent, hermesBinary = process.env.HERMES_BIN || 'hermes', execute = null, timeoutMs = 90000, balanceStore = null } = {}) {
+  constructor({ telemetryAgent, hermesBinary = process.env.HERMES_BIN || 'hermes', execute = null, timeoutMs = Number(process.env.HERMES_TIMEOUT_MS) || 240000, balanceStore = null } = {}) {
     this.telemetryAgent = telemetryAgent;
-    this.hermesBinary = hermesBinary;
+    this.hermesBinary = resolveHermesBinary(hermesBinary);
     this.execute = execute || ((prompt) => runHermes(this.hermesBinary, prompt, timeoutMs));
     this.timeoutMs = timeoutMs;
     this.balanceStore = balanceStore || {

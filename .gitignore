@@ -28,18 +28,20 @@ packages/server/data/*.db-*
 # AI tool configs (local only)
 .commandcode/
 .codex/
+.planning/
 
-# Downloaded sprite source zips (not game assets)
-game-assets/new-sprites/
+# Downloaded/editable asset sources that are not shipped by Vite
+tools/asset-pipeline/new-sprites/
+tools/asset-pipeline/FreeCharactersAnimationsAssetPack.zip
 
 # Old unused asset directories (replaced by procedural tiles + Flare/Chibi sprites)
-game-assets/characters/
-game-assets/enemies/
-game-assets/items/
-game-assets/weapons/
-game-assets/terrain/
-game-assets/ui/
-game-assets/vfx/
+tools/asset-pipeline/characters/
+tools/asset-pipeline/enemies/
+tools/asset-pipeline/items/
+tools/asset-pipeline/weapons/
+tools/asset-pipeline/terrain/
+tools/asset-pipeline/ui/
+tools/asset-pipeline/vfx/
 
 # Python cache
 __pycache__/
