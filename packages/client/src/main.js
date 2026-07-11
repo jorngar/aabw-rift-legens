@@ -370,7 +370,9 @@ async function initGame(classId = 'warrior') {
   // ---- Portal (animated CSS effect) ----
   const { createPortal } = await import('./presentation/portal-effect.js');
   const portalEl = createPortal();
-  const portalPos = { x: 8, y: 3 };
+  // Draw the portal effect on the SAME tile the rift-system uses to gate
+  // entry, so what the player sees matches what "Press F" checks.
+  const portalPos = { ...riftSystem.portalPos };
 
   // ---- Input ----
   const { keys, getMovementInput } = setupInput({
