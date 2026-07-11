@@ -9,8 +9,11 @@
 //   dashboard reads / snapshot queries).
 // - WebSocket upgrades are weighted random per new connection, then
 //   sticky for the life of that socket (http-proxy pins the target).
+// - GET/POST /api/lb/weights lets the ab-testing skill (or a human)
+//   shift traffic live; handled locally, never proxied.
 // ============================================================
 import http from 'node:http';
+import express from 'express';
 import httpProxy from 'http-proxy';
 
 const LB_PORT = Number(process.env.LB_PORT) || 3000;
@@ -20,6 +23,10 @@ const POOLS = [
   { variant: 'A', target: 'http://localhost:3001', weight: 50 },
   { variant: 'B', target: 'http://localhost:3002', weight: 50 },
 ];
+
+// In-memory only — resets to {A:50, B:50} on LB restart. Documented behaviour v1.
+let lastChangeAt = null;
+let lastChangeOrigin = null;
 
 const proxy = httpProxy.createProxyServer({ changeOrigin: true, ws: true });
 
@@ -39,22 +46,58 @@ function pickPool() {
   return POOLS[POOLS.length - 1];
 }
 
+const app = express();
+app.use(express.json());
+
+// Read current weights + last-change telemetry (skill verifies propagation,
+// dashboard header polls this to show live LB state).
+app.get('/api/lb/weights', (_req, res) => {
+  res.json({
+    A: POOLS[0].weight,
+    B: POOLS[1].weight,
+    lastChangeAt,
+    lastChangeOrigin,
+  });
+});
+
+app.post('/api/lb/weights', (req, res) => {
+  const { A, B } = req.body || {};
+  const bad =
+    ![A, B].every(Number.isFinite) ||
+    [A, B].some((n) => n < 0 || n > 100) ||
+    A + B !== 100;
+  if (bad) return res.status(400).json({ error: 'A and B must be integers 0-100 summing to 100' });
+
+  const before = { A: POOLS[0].weight, B: POOLS[1].weight };
+  POOLS[0].weight = A; // POOLS[0] is variant A by construction
+  POOLS[1].weight = B;
+  const stamp = new Date().toISOString();
+  lastChangeAt = stamp;
+  lastChangeOrigin = req.get('user-agent') || req.ip || 'unknown';
+  console.log(`[LB] ${stamp} weights ${before.A}/${before.B} → ${A}/${B} · via ${lastChangeOrigin}`);
+  res.json({ ok: true, weights: { A, B }, at: stamp });
+});
+
 // Round-robin cursor for HTTP requests (both pools serve identical data).
 let httpCursor = 0;
 
-const server = http.createServer((req, res) => {
+// Fallthrough: everything else (game HTTP, dashboard fetches, other /api/*)
+// proxies to a pool. Registered AFTER /api/lb/* so weight routes stay local.
+app.use((req, res) => {
   const pool = POOLS[httpCursor++ % POOLS.length];
   proxy.web(req, res, { target: pool.target });
 });
 
-server.on('upgrade', (req, socket, head) => {
+const httpServer = http.createServer(app);
+
+httpServer.on('upgrade', (req, socket, head) => {
   const pool = pickPool();
   const playerId = new URL(req.url, 'ws://x').searchParams.get('playerId') || '?';
   console.log(`[LB] ws upgrade → pool=${pool.variant} (player=${playerId})`);
   proxy.ws(req, socket, head, { target: pool.target });
 });
 
-server.listen(LB_PORT, () => {
+httpServer.listen(LB_PORT, () => {
   console.log(`[LB] listening on :${LB_PORT}`);
   for (const p of POOLS) {
     console.log(`[LB]   pool ${p.variant} weight=${p.weight}% → ${p.target}`);

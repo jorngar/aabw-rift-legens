@@ -4,7 +4,7 @@
 // map JSON is picked up on server restart without dropping FK
 // dependents (sessions, assignments, etc.).
 // ============================================================
-import { PATCHES } from '@rift-seed/shared';
+import { PATCHES } from '@rift-seed/shared/patches-loader.js';
 import { pool } from './db/pool.js';
 import { insertPatch } from './db/repositories.js';
 

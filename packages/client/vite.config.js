@@ -1,8 +1,23 @@
 import { defineConfig } from 'vite';
 
+// Rewrite `/ab-dashboard` (no trailing slash, no `.html`) to the folder's
+// index. Vite would otherwise 301-redirect to `/ab-dashboard/`.
+function cleanUrlDashboard() {
+  return {
+    name: 'ab-dashboard-clean-url',
+    configureServer(server) {
+      server.middlewares.use((req, _res, next) => {
+        if (req.url === '/ab-dashboard') req.url = '/ab-dashboard/index.html';
+        next();
+      });
+    },
+  };
+}
+
 export default defineConfig({
   root: '.',
   publicDir: 'public',
+  plugins: [cleanUrlDashboard()],
   server: {
     port: 5173,
     proxy: {

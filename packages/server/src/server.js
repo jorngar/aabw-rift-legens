@@ -19,6 +19,7 @@ import { seedPatches } from './patch-seeder.js';
 import { SessionManager } from './session-manager.js';
 import { compressSession } from './path-compressor.js';
 import { fetchAllData, fetchSummary } from './ab-data-viewer.js';
+import { fetchBreakdowns } from './ab-breakdowns.js';
 
 const app = express();
 app.use(cors());
@@ -221,6 +222,15 @@ app.get('/api/ab-tests/data', async (req, res) => {
 app.get('/api/ab-tests/summary', async (req, res) => {
   try {
     res.json(await fetchSummary());
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// Aggregated breakdowns + spatial points for the visual dashboard.
+app.get('/api/ab-tests/breakdowns', async (req, res) => {
+  try {
+    res.json(await fetchBreakdowns());
   } catch (err) {
     res.status(500).json({ error: err.message });
   }

@@ -283,36 +283,10 @@ export const MAP = Object.freeze({
 });
 
 // -----------------------------------------------------------------
-// Patch v0.1 — full-game-version A/B test (map layouts differ)
+// Patch registry moved to patches-loader.js (server-only — uses node:fs).
+// Client imports from this file for browser-safe config only; server
+// imports PATCHES directly from '@rift-seed/shared/patches-loader.js'.
 // -----------------------------------------------------------------
-import { validatePatch } from './patch.js';
-import gardenA  from './maps/patch-v01/garden-a.js';
-import gardenB  from './maps/patch-v01/garden-b.js';
-import dungeonA from './maps/patch-v01/dungeon-a.js';
-import dungeonB from './maps/patch-v01/dungeon-b.js';
-
-/**
- * Registered patches. Each patch bundles a full game version:
- * garden map + dungeon map + spawn positions per variant.
- * The server persists these into the `patches` table on first boot.
- */
-export const PATCHES = Object.freeze({
-  'patch-v01': {
-    id: 'patch-v01',
-    name: 'Patch v0.1 — Corridor vs Maze',
-    description: 'Full game-version A/B: linear corridor (A) vs branching maze (B).',
-    variantA: {
-      label: 'A — Linear Corridor',
-      garden: gardenA,
-      dungeon: dungeonA,
-    },
-    variantB: {
-      label: 'B — Branching Maze',
-      garden: gardenB,
-      dungeon: dungeonB,
-    },
-  },
-});
 
 /**
  * Legacy AB_TESTS stub — deliberately empty.
@@ -322,10 +296,6 @@ export const PATCHES = Object.freeze({
  * TODO: delete after ab-testing-agent.js and client ab-testing.js migrate.
  */
 export const AB_TESTS = Object.freeze({});
-
-// Fail fast at boot if any patch is malformed. Cheap insurance — throws
-// with a specific message instead of surfacing as a downstream game bug.
-for (const patch of Object.values(PATCHES)) validatePatch(patch);
 
 /** Server config */
 export const SERVER = Object.freeze({
