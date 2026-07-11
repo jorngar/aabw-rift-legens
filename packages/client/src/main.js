@@ -17,6 +17,7 @@ import { TrajectorySampler } from './game/systems/trajectory-sampler.js';
 import { DefectDetector } from './game/systems/defect-detector.js';
 import { ProgressionSystem } from './game/systems/progression.js';
 import { RiftSystem } from './game/systems/rift-system.js';
+import { ProjectileSystem } from './game/systems/projectile-system.js';
 import { InventorySystem } from './game/systems/inventory-system.js';
 import { setupInput } from './game/controllers/input-controller.js';
 import { EventType, createEvent } from '@rift-seed/shared/events';
@@ -252,6 +253,7 @@ async function initGame(classId = 'warrior') {
   progressionSystem = new ProgressionSystem(playerEntity, emitEvent);
   const inventorySystem = new InventorySystem(playerEntity, emitEvent);
   const riftSystem = new RiftSystem(playerEntity, world, assets, camera, emitEvent, progressionSystem, inventorySystem);
+  const projectileSystem = new ProjectileSystem(camera.container);
   // Default portal — Minimap reads world.portalPos; keep it in sync with
   // rift-system's fallback in case A/B assignment is skipped.
   world.portalPos = riftSystem.portalPos;
@@ -455,6 +457,15 @@ async function initGame(classId = 'warrior') {
           );
         }
         triggerAttackAnimation(playerEntity, animationStateForSkill(skillId, classId));
+        // Ranger's arrowShot fires a visible arrow to each hit target so
+        // the ranged nature reads clearly. Ballistic arc, purely visual.
+        if (classId === 'ranger' && skillId === 'arrowShot') {
+          if (target?.pos) projectileSystem.spawnArrow(playerEntity.pos, target.pos);
+          for (const hit of result.result?.hits || []) {
+            const e = world.getEntity(hit.id);
+            if (e?.pos) projectileSystem.spawnArrow(playerEntity.pos, e.pos);
+          }
+        }
         const effectTarget = target && result.result?.hit ? target : playerEntity;
         const ps = tileToScreen(effectTarget.pos.x, effectTarget.pos.y);
         const sx = ps.x + camera.container.x;
@@ -641,6 +652,11 @@ async function initGame(classId = 'warrior') {
           const result = meleeAttack(playerEntity, target, emitEvent);
           if (result.hit) {
             triggerAttackAnimation(playerEntity);
+            // Ranger's basic "attack" is a bow shot — draw the arrow arcing
+            // to the target for feedback; damage was already applied above.
+            if (classId === 'ranger') {
+              projectileSystem.spawnArrow(playerEntity.pos, target.pos);
+            }
             const screen = tileToScreen(target.pos.x, target.pos.y);
             const sx = screen.x + camera.container.x;
             const sy = screen.y + camera.container.y - 30;
@@ -690,6 +706,32 @@ async function initGame(classId = 'warrior') {
       playerEntity.path = null;
     }
 
+    // Auto-face nearest enemy when the player is idle so ranged classes
+    // (esp. ranger) point at what they'd shoot without needing to walk
+    // first. Skip if the player is en route somewhere or already locked
+    // onto an attack target — that intent shouldn't be overridden.
+    if (!playerEntity.targetPos && !playerEntity.attackTarget && !playerEntity.isMoving) {
+      let nearest = null;
+      let nearestDistSq = Infinity;
+      for (const e of world.query('isEnemy', 'pos', 'stats')) {
+        if (e.stats.hp <= 0) continue;
+        const ex = e.pos.x - playerEntity.pos.x;
+        const ey = e.pos.y - playerEntity.pos.y;
+        const dsq = ex * ex + ey * ey;
+        // Within ~5 tiles — matches arrowShot's 5-tile range.
+        if (dsq < nearestDistSq && dsq < 25) {
+          nearestDistSq = dsq;
+          nearest = e;
+        }
+      }
+      if (nearest) {
+        playerEntity.direction = getDirection(
+          nearest.pos.x - playerEntity.pos.x,
+          nearest.pos.y - playerEntity.pos.y,
+        );
+      }
+    }
+
     // Run systems
     movementSystem(world, dt, emitEvent);
     enemyAISystem(world, dt, emitEvent);
@@ -697,6 +739,7 @@ async function initGame(classId = 'warrior') {
     spriteSyncSystem(world, dt);
     depthSortSystem(world, dt);
     playerCombatSystem(world, dt);
+    projectileSystem.update(dt);
 
     // Camera follow
     const playerScreen = tileToScreen(playerEntity.pos.x, playerEntity.pos.y);
