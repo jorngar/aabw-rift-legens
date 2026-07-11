@@ -171,11 +171,10 @@ async function initGame(classId = 'warrior') {
   });
   const playerSprite = playerVisual.sprite;
 
-  // Class-specific color overlay (HTML div behind sprite)
-  const classColors = { warrior: '#ffffff', mage: '#aaddff', rogue: '#aaffaa', ranger: '#ffddaa' };
-  const classColorEl = document.createElement('div');
-  classColorEl.style.cssText = `position:fixed;width:40px;height:50px;background:${classColors[classId] || '#ffffff'};opacity:0.15;border-radius:50%;pointer-events:none;z-index:44;mix-blend-mode:screen;`;
-  document.body.appendChild(classColorEl);
+  // Class-specific color overlay — disabled; the neon+cream oval combo
+  // made the visible "footprint" much wider than the actual tile hitbox.
+  // Keep only playerShadow as the ground indicator.
+  const classColorEl = null;
 
   // Update skill bar HTML with class-specific skills
   const classSkills = classConfig.skills;
@@ -188,10 +187,8 @@ async function initGame(classId = 'warrior') {
     }).join('');
   }
 
-  // Add subtle glow behind player for visibility
-  const playerGlow = document.createElement('div');
-  playerGlow.style.cssText = 'position:fixed;width:30px;height:20px;background:radial-gradient(ellipse,rgba(232,255,71,0.15) 0%,transparent 70%);pointer-events:none;z-index:44;border-radius:50%;';
-  document.body.appendChild(playerGlow);
+  // Yellow glow disabled — see classColorEl note above.
+  const playerGlow = null;
 
   // Add drop shadow under player
   const playerShadow = document.createElement('div');
@@ -670,13 +667,10 @@ async function initGame(classId = 'warrior') {
     camera.follow(playerScreen.x, playerScreen.y);
     camera.update();
 
-    // Update player glow and shadow position
-    playerGlow.style.left = `${playerScreen.x + camera.container.x - 15}px`;
-    playerGlow.style.top = `${playerScreen.y + camera.container.y - 10}px`;
+    // Only the black drop shadow is drawn now; glow + class-tint overlays
+    // were removed so the visible footprint matches the tile hitbox.
     playerShadow.style.left = `${playerScreen.x + camera.container.x - 20}px`;
     playerShadow.style.top = `${playerScreen.y + camera.container.y + 15}px`;
-    classColorEl.style.left = `${playerScreen.x + camera.container.x - 20}px`;
-    classColorEl.style.top = `${playerScreen.y + camera.container.y - 25}px`;
 
     // Update lighting
     lighting.update(playerScreen.x, playerScreen.y);
