@@ -12,6 +12,7 @@ import { DataCleaningAgent } from './agents/data-cleaning-agent.js';
 import { HermesBalanceAgent } from './agents/hermes-balance-agent.js';
 import { getBalance, setBalance, getAllBalance, getMatchHistory, getAdjustments, getClasses, getClass, getAggregateStats, recordMatch, initDB } from './database.js';
 import { getRuntimeConfig } from './runtime-config.js';
+import { verifyConnection as verifyPostgresConnection } from './db/pool.js';
 
 const app = express();
 app.use(cors());
@@ -222,11 +223,18 @@ app.get('/api/stats', (req, res) => {
 // ---- Start ----
 async function start() {
   await initDB();
+  // A/B collection layer uses Postgres in parallel with the SQLite balance store.
+  // Non-fatal on error so the rest of the server still boots.
+  try {
+    await verifyPostgresConnection();
+  } catch (err) {
+    console.warn(`[DB] Postgres unreachable — A/B collection disabled: ${err.message}`);
+  }
   httpServer.listen(SERVER.PORT, () => {
     console.log(`[RiftSEED Server] Running on http://localhost:${SERVER.PORT}`);
     console.log(`[RiftSEED Server] WebSocket on ws://localhost:${SERVER.PORT}/ws`);
     console.log(`[RiftSEED Server] Agents: Telemetry SDK, Hermes Balance, A/B Testing, Data Cleaning`);
-    console.log(`[RiftSEED Server] Database: SQLite (game.db)`);
+    console.log(`[RiftSEED Server] Database: SQLite (game.db) + Postgres (A/B collection)`);
     console.log(`[RiftSEED Server] Classes: ${getClasses().map(c => c.name).join(', ')}`);
   });
 }
