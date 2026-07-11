@@ -167,7 +167,7 @@ async function initGame(classId = 'warrior') {
   // ---- Create Player — explicit idle / move / attack states ----
   const playerVisual = createStatefulSprite(assets, playerAnimationProfile(classId), {
     scale: 2.2,
-    anchorY: 0.88,
+    anchorY: 0.71,
   });
   const playerSprite = playerVisual.sprite;
 
@@ -307,7 +307,7 @@ async function initGame(classId = 'warrior') {
     const isShadowSlime = type === 'shadowBeast';
     const visual = createStatefulSprite(assets, isShadowSlime ? SLIME_ANIMATION_PROFILE : ORC_ANIMATION_PROFILE, {
       scale: isShadowSlime ? 2 : 2.3,
-      anchorY: 0.82,
+      anchorY: 0.68,
     });
     const sprite = visual.sprite;
 

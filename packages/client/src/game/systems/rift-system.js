@@ -199,7 +199,7 @@ export class RiftSystem {
     const isShadowSlime = type === 'shadowBeast';
     const visual = createStatefulSprite(this.assets, isShadowSlime ? SLIME_ANIMATION_PROFILE : ORC_ANIMATION_PROFILE, {
       scale: isShadowSlime ? 2 : 2.3,
-      anchorY: 0.82,
+      anchorY: 0.68,
     });
     const sprite = visual.sprite;
 
