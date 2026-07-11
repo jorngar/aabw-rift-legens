@@ -36,7 +36,10 @@ export class RiftSystem {
 
     /** Optional per-variant maps from PATCHES (set after A/B handshake). */
     this._variantGarden = null;
-    this._variantDungeon = null;
+    /** Pool of dungeon layouts for the assigned variant. Rotated per rift entry. */
+    this._variantDungeons = null;
+    /** Rotating rift-entry counter — session-scoped, drives layout selection. */
+    this._runCount = 0;
   }
 
   /** Store reference to the tile container for rebuilding */
@@ -47,10 +50,18 @@ export class RiftSystem {
   /**
    * Wire the A/B-assigned map bundle so enter/exit uses the assigned
    * variant instead of the legacy procedural generator.
+   *
+   * Accepts either the new `dungeons` array (pool of layouts rotated
+   * per rift entry) or the legacy single `dungeon` — the latter is
+   * normalized into a 1-element pool so downstream code has one path.
    */
-  setVariantMaps({ garden, dungeon } = {}) {
-    if (garden)  this._variantGarden  = garden;
-    if (dungeon) this._variantDungeon = dungeon;
+  setVariantMaps({ garden, dungeon, dungeons } = {}) {
+    if (garden) this._variantGarden = garden;
+    if (Array.isArray(dungeons) && dungeons.length > 0) {
+      this._variantDungeons = dungeons;
+    } else if (dungeon) {
+      this._variantDungeons = [dungeon];
+    }
   }
 
   update(dt) {
@@ -131,9 +142,20 @@ export class RiftSystem {
     if (this._promptEl) { this._promptEl.remove(); this._promptEl = null; }
     this.showPrompt = false;
 
-    // Prefer the A/B-assigned dungeon map; fall back to procedural.
-    const grid = this._variantDungeon?.tiles || generateDungeonMap(12, 12).grid;
-    const spawn = this._variantDungeon?.spawn || { x: 2, y: 2 };
+    // Rotate through the assigned dungeon pool. `_runCount` is session-scoped
+    // so the same player replaying immediately gets a different layout each
+    // descent. Deterministic per (player, run#).
+    const pool = this._variantDungeons;
+    const layoutIndex = pool && pool.length > 0
+      ? (this._runCount % pool.length)
+      : -1;
+    const layoutId = layoutIndex >= 0 ? `layout-${layoutIndex + 1}` : null;
+    const runNumber = this._runCount;
+    this._runCount++;
+
+    const selected = layoutIndex >= 0 ? pool[layoutIndex] : null;
+    const grid  = selected?.tiles  || generateDungeonMap(12, 12).grid;
+    const spawn = selected?.spawn  || { x: 2, y: 2 };
     this._originalGrid = this.world.grid;
     this.world.grid = grid;
 
@@ -153,7 +175,13 @@ export class RiftSystem {
     this.player.attackTarget = null;
 
     this._showAnnouncement('RIFT ENTERED — Tier ' + this.dungeonTier);
-    this.emitEvent(createEvent(EventType.RIFT_ENTER, this.player.id, { tier: this.dungeonTier }));
+    // Telemetry: expose which layout the rotation picked so A/B analysis
+    // can attribute KPIs (completion / deaths / defects) to a specific map.
+    this.emitEvent(createEvent(EventType.RIFT_ENTER, this.player.id, {
+      tier: this.dungeonTier,
+      layoutId,
+      runNumber,
+    }));
 
     // Start first wave after delay
     setTimeout(() => this._startWave(0), 2000);

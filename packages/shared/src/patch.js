@@ -125,14 +125,26 @@ export function validatePatch(patch) {
   }
   for (const v of ['variantA', 'variantB']) {
     const variant = patch[v];
-    if (!variant.garden || !variant.dungeon) {
-      throw new Error(`validatePatch: ${v} missing garden/dungeon`);
+    if (!variant.garden) {
+      throw new Error(`validatePatch: ${v} missing garden`);
     }
-    for (const zone of ['garden', 'dungeon']) {
-      const m = variant[zone];
+    // Accept either the new `dungeons` pool (array of layouts, rotated at
+    // runtime) or the legacy single `dungeon` for backwards-compat with
+    // any patch still shipping the old shape.
+    const dungeons = Array.isArray(variant.dungeons)
+      ? variant.dungeons
+      : (variant.dungeon ? [variant.dungeon] : null);
+    if (!dungeons || dungeons.length === 0) {
+      throw new Error(`validatePatch: ${v} needs at least one dungeon (in .dungeons array)`);
+    }
+    const gm = variant.garden;
+    if (!gm.tiles || !gm.spawn || !gm.portal || !Array.isArray(gm.enemySpawns)) {
+      throw new Error(`validatePatch: ${v}.garden malformed`);
+    }
+    dungeons.forEach((m, i) => {
       if (!m.tiles || !m.spawn || !m.portal || !Array.isArray(m.enemySpawns)) {
-        throw new Error(`validatePatch: ${v}.${zone} malformed`);
+        throw new Error(`validatePatch: ${v}.dungeons[${i}] malformed`);
       }
-    }
+    });
   }
 }
