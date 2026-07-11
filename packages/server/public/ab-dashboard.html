@@ -1,0 +1,266 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>Rift SEED — A/B Testing Dashboard</title>
+  <style>
+    :root {
+      --bg: #0a0612;
+      --card: #14101f;
+      --border: #2a2a3a;
+      --accent: #e8ff47;
+      --A: #4a9eff;
+      --B: #a855f7;
+      --text: #eaeaea;
+      --dim: #8a8aa0;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0; padding: 20px; background: var(--bg); color: var(--text);
+      font-family: 'JetBrains Mono', 'SF Mono', Menlo, monospace;
+      font-size: 13px; min-height: 100vh;
+    }
+    header {
+      display: flex; align-items: center; justify-content: space-between;
+      margin-bottom: 20px; padding-bottom: 12px; border-bottom: 1px solid var(--border);
+    }
+    header h1 {
+      margin: 0; font-size: 18px; color: var(--accent); letter-spacing: 1px;
+    }
+    header .meta { color: var(--dim); font-size: 11px; }
+    header .live-dot {
+      display: inline-block; width: 8px; height: 8px; background: #44ff88;
+      border-radius: 50%; margin-right: 6px; animation: pulse 1.5s ease-in-out infinite;
+    }
+    @keyframes pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.3; } }
+
+    .patch-block { margin-bottom: 24px; }
+    .patch-title {
+      font-size: 14px; color: var(--accent); margin-bottom: 12px;
+      display: flex; justify-content: space-between; align-items: baseline;
+    }
+    .patch-title small { color: var(--dim); font-size: 11px; }
+
+    .variants { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+
+    .card {
+      background: var(--card); border: 1px solid var(--border);
+      border-radius: 6px; padding: 16px;
+    }
+    .card.A { border-left: 3px solid var(--A); }
+    .card.B { border-left: 3px solid var(--B); }
+    .card h2 {
+      margin: 0 0 12px; font-size: 13px; display: flex; align-items: center; gap: 8px;
+    }
+    .card.A h2 { color: var(--A); }
+    .card.B h2 { color: var(--B); }
+    .card h2 .badge {
+      background: var(--accent); color: #000; font-size: 9px; padding: 2px 6px;
+      border-radius: 3px; letter-spacing: 0.5px;
+    }
+
+    .kpi-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px 20px; }
+    .kpi { display: flex; flex-direction: column; gap: 2px; }
+    .kpi .label { font-size: 10px; color: var(--dim); text-transform: uppercase; letter-spacing: 0.5px; }
+    .kpi .value { font-size: 18px; color: var(--text); font-weight: 500; }
+    .kpi .unit { font-size: 10px; color: var(--dim); margin-left: 4px; }
+
+    .compare {
+      margin-top: 16px; padding-top: 12px; border-top: 1px dashed var(--border);
+    }
+    .compare-row {
+      display: grid; grid-template-columns: 90px 1fr 1fr; gap: 8px;
+      align-items: center; margin-bottom: 8px; font-size: 11px;
+    }
+    .compare-row .metric { color: var(--dim); text-transform: uppercase; letter-spacing: 0.4px; font-size: 10px; }
+    .bar-wrap { position: relative; height: 16px; background: rgba(255,255,255,0.04); border-radius: 3px; overflow: hidden; }
+    .bar-fill { position: absolute; top: 0; bottom: 0; left: 0; border-radius: 3px; transition: width 0.4s ease-out; }
+    .bar-fill.A { background: var(--A); }
+    .bar-fill.B { background: var(--B); }
+    .bar-value {
+      position: absolute; top: 50%; right: 6px; transform: translateY(-50%);
+      font-size: 10px; color: var(--text); text-shadow: 0 0 4px rgba(0,0,0,0.8);
+    }
+    .winner { color: var(--accent); }
+    .winner::after { content: ' ★'; }
+
+    .events-strip {
+      margin-top: 24px; padding: 12px 16px; background: var(--card);
+      border: 1px solid var(--border); border-radius: 6px;
+    }
+    .events-strip h3 { margin: 0 0 8px; font-size: 11px; color: var(--dim); text-transform: uppercase; letter-spacing: 1px; }
+    .events-tags { display: flex; flex-wrap: wrap; gap: 6px; }
+    .event-tag {
+      background: rgba(232,255,71,0.08); border: 1px solid rgba(232,255,71,0.2);
+      color: var(--accent); padding: 3px 8px; border-radius: 3px;
+      font-size: 10px; display: flex; gap: 6px; align-items: center;
+    }
+    .event-tag .n { color: var(--text); font-weight: 500; }
+
+    .footer { margin-top: 20px; text-align: center; color: var(--dim); font-size: 10px; }
+    .footer a { color: var(--accent); text-decoration: none; }
+    .footer a:hover { text-decoration: underline; }
+
+    .empty { color: var(--dim); font-style: italic; text-align: center; padding: 20px; }
+    .error { color: #ff5555; padding: 12px; text-align: center; }
+  </style>
+</head>
+<body>
+  <header>
+    <h1>◆ RIFT SEED — A/B TESTING DASHBOARD</h1>
+    <div class="meta">
+      <span class="live-dot"></span>
+      LIVE · refresh every 3s ·
+      <span id="last-updated">--</span>
+    </div>
+  </header>
+
+  <main id="root">
+    <div class="empty">Loading…</div>
+  </main>
+
+  <div class="events-strip">
+    <h3>Event Stream (all-time counts)</h3>
+    <div class="events-tags" id="events-tags"><span class="empty">…</span></div>
+  </div>
+
+  <div class="footer">
+    Raw JSON: <a href="/api/ab-tests/data" target="_blank">/api/ab-tests/data</a> ·
+    <a href="/api/ab-tests/summary" target="_blank">/api/ab-tests/summary</a> ·
+    <a href="/api/ab-tests" target="_blank">/api/ab-tests</a> ·
+    <a href="/api/health" target="_blank">/api/health</a>
+  </div>
+
+  <script>
+    const REFRESH_MS = 3000;
+
+    function fmt(n)       { return n == null ? '—' : Number(n).toLocaleString(); }
+    function fmtMs(n)     { if (n == null) return '—'; if (n < 1000) return n + 'ms'; return (n / 1000).toFixed(1) + 's'; }
+
+    function bar(variant, value, max) {
+      const pct = max > 0 ? Math.max(2, Math.min(100, (value / max) * 100)) : 0;
+      return `
+        <div class="bar-wrap">
+          <div class="bar-fill ${variant}" style="width:${pct}%"></div>
+          <span class="bar-value">${fmt(value)}</span>
+        </div>
+      `;
+    }
+
+    function compareRow(label, a, b, better = 'higher') {
+      // For "lower is better" KPIs (defects, deaths) flip the winner logic.
+      let winA = false, winB = false;
+      if (a !== b) {
+        const aWins = better === 'higher' ? a > b : a < b;
+        if (aWins) winA = true; else winB = true;
+      }
+      const max = Math.max(a, b, 1);
+      return `
+        <div class="compare-row">
+          <div class="metric">${label}</div>
+          <div class="${winA ? 'winner' : ''}">${bar('A', a, max)}</div>
+          <div class="${winB ? 'winner' : ''}">${bar('B', b, max)}</div>
+        </div>
+      `;
+    }
+
+    function renderVariant(v, data) {
+      return `
+        <div class="card ${v.variant}">
+          <h2>VARIANT ${v.variant} <span class="badge">${v.sessions} sessions</span></h2>
+          <div class="kpi-grid">
+            <div class="kpi">
+              <span class="label">Sessions</span>
+              <span class="value">${fmt(v.sessions)}<span class="unit">total</span></span>
+            </div>
+            <div class="kpi">
+              <span class="label">Avg Duration</span>
+              <span class="value">${fmtMs(v.avg_duration_ms)}</span>
+            </div>
+            <div class="kpi">
+              <span class="label">Purchases</span>
+              <span class="value">${fmt(v.purchases)}<span class="unit">${fmt(v.gold_spent)}g total</span></span>
+            </div>
+            <div class="kpi">
+              <span class="label">Deaths</span>
+              <span class="value">${fmt(v.deaths)}</span>
+            </div>
+            <div class="kpi">
+              <span class="label">Defects</span>
+              <span class="value">${fmt(v.defects)}</span>
+            </div>
+            <div class="kpi">
+              <span class="label">Compressed Paths</span>
+              <span class="value">${fmt(v.paths)}</span>
+            </div>
+          </div>
+        </div>
+      `;
+    }
+
+    function renderPatch(patchId, patchName, a, b) {
+      const totalSessions = a.sessions + b.sessions;
+      return `
+        <div class="patch-block">
+          <div class="patch-title">
+            <span>${patchName}</span>
+            <small>${totalSessions} total sessions · patch id ${patchId}</small>
+          </div>
+          <div class="variants">
+            ${renderVariant(a)}
+            ${renderVariant(b)}
+          </div>
+          <div class="compare">
+            ${compareRow('Sessions',   a.sessions,        b.sessions,        'higher')}
+            ${compareRow('Avg dur',    a.avg_duration_ms, b.avg_duration_ms, 'higher')}
+            ${compareRow('Purchases',  a.purchases,       b.purchases,       'higher')}
+            ${compareRow('Gold spent', a.gold_spent,      b.gold_spent,      'higher')}
+            ${compareRow('Defects',    a.defects,         b.defects,         'lower')}
+            ${compareRow('Deaths',     a.deaths,          b.deaths,          'lower')}
+          </div>
+        </div>
+      `;
+    }
+
+    async function refresh() {
+      try {
+        const [summary, data] = await Promise.all([
+          fetch('/api/ab-tests/summary').then(r => r.json()),
+          fetch('/api/ab-tests/data?limit=1').then(r => r.json()),
+        ]);
+
+        if (!summary || summary.length === 0) {
+          document.getElementById('root').innerHTML =
+            '<div class="empty">No patch data yet — has the seeder run? Try connecting a player.</div>';
+        } else {
+          // Group by patch
+          const byPatch = new Map();
+          for (const row of summary) {
+            if (!byPatch.has(row.patch_id)) byPatch.set(row.patch_id, { name: row.patch_name, A: null, B: null });
+            byPatch.get(row.patch_id)[row.variant] = row;
+          }
+          let html = '';
+          for (const [pid, group] of byPatch) {
+            if (!group.A || !group.B) continue;
+            html += renderPatch(pid, group.name, group.A, group.B);
+          }
+          document.getElementById('root').innerHTML = html;
+        }
+
+        // Event tags strip
+        const tags = (data.eventCounts || [])
+          .map(e => `<span class="event-tag">${e.event_type} <span class="n">${e.n}</span></span>`)
+          .join('');
+        document.getElementById('events-tags').innerHTML = tags || '<span class="empty">no events yet</span>';
+
+        document.getElementById('last-updated').textContent = new Date().toLocaleTimeString();
+      } catch (err) {
+        document.getElementById('root').innerHTML = `<div class="error">Failed to fetch: ${err.message}</div>`;
+      }
+    }
+
+    refresh();
+    setInterval(refresh, REFRESH_MS);
+  </script>
+</body>
+</html>
