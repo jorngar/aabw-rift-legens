@@ -7,10 +7,26 @@ import pg from 'pg';
 const DATABASE_URL = process.env.DATABASE_URL
   || 'postgresql://rift:rift_dev_only@localhost:5432/rift_seed';
 
+// Railway / most managed Postgres providers require SSL. Local Docker
+// does not have certs. Detect by hostname — anything that isn't
+// localhost / 127.x / *.internal (private DNS) needs SSL.
+function needsSsl(url) {
+  try {
+    const host = new URL(url).hostname;
+    return !(
+      host === 'localhost' ||
+      host.startsWith('127.') ||
+      host.endsWith('.internal') ||
+      host.endsWith('.local')
+    );
+  } catch { return false; }
+}
+
 export const pool = new pg.Pool({
   connectionString: DATABASE_URL,
   max: 10,
   idleTimeoutMillis: 30_000,
+  ssl: needsSsl(DATABASE_URL) ? { rejectUnauthorized: false } : false,
 });
 
 pool.on('error', (err) => {
@@ -36,7 +52,7 @@ export async function verifyConnection() {
 // Close the pool on process exit. We do NOT call process.exit here so the
 // owning app (server.js / migrate.js) keeps control over its shutdown flow.
 let poolClosed = false;
-async function closePool(reason) {
+export async function closePool(reason) {
   if (poolClosed) return;
   poolClosed = true;
   console.log(`[DB] closing pool (${reason})`);

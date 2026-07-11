@@ -14,14 +14,16 @@
 // ============================================================
 import http from 'node:http';
 import express from 'express';
+import cors from 'cors';
 import httpProxy from 'http-proxy';
 
-const LB_PORT = Number(process.env.LB_PORT) || 3000;
+// Railway injects $PORT for public services. Local dev uses LB_PORT=3000.
+const LB_PORT = Number(process.env.LB_PORT || process.env.PORT) || 3000;
 
 /** Weight in percent (must sum to 100 for readability, but any positive int works). */
 const POOLS = [
-  { variant: 'A', target: 'http://localhost:3001', weight: 50 },
-  { variant: 'B', target: 'http://localhost:3002', weight: 50 },
+  { variant: 'A', target: process.env.POOL_A_URL || 'http://localhost:3001', weight: 50 },
+  { variant: 'B', target: process.env.POOL_B_URL || 'http://localhost:3002', weight: 50 },
 ];
 
 // In-memory only — resets to {A:50, B:50} on LB restart. Documented behaviour v1.
@@ -47,6 +49,10 @@ function pickPool() {
 }
 
 const app = express();
+// CORS lets the deployed client (on a different Railway domain) reach the
+// LB API. `origin: true` reflects the request Origin header — safe because
+// there is no cookie-based auth. Pin to CLIENT_ORIGIN in production if desired.
+app.use(cors({ origin: process.env.CLIENT_ORIGIN || true }));
 app.use(express.json());
 
 // Read current weights + last-change telemetry (skill verifies propagation,
@@ -92,7 +98,9 @@ const httpServer = http.createServer(app);
 
 httpServer.on('upgrade', (req, socket, head) => {
   const pool = pickPool();
-  const playerId = new URL(req.url, 'ws://x').searchParams.get('playerId') || '?';
+  // Use a scheme that matches whatever protocol the request came in on.
+  // Locally that's ws://; on Railway public WSS terminates at the edge.
+  const playerId = new URL(req.url, `ws://x`).searchParams.get('playerId') || '?';
   console.log(`[LB] ws upgrade → pool=${pool.variant} (player=${playerId})`);
   proxy.ws(req, socket, head, { target: pool.target });
 });

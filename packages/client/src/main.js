@@ -12,6 +12,7 @@ import { movementSystem, spriteSyncSystem, enemyAISystem, depthSortSystem, playe
 import { TelemetrySystem } from './infrastructure/analytics/telemetry.js';
 import { ABTestingSystem } from './infrastructure/analytics/ab-testing.js';
 import { DataLoggingSystem } from './infrastructure/analytics/data-logging.js';
+import { API_BASE, WS_BASE } from './infrastructure/runtime-endpoints.js';
 import { TrajectorySampler } from './game/systems/trajectory-sampler.js';
 import { DefectDetector } from './game/systems/defect-detector.js';
 import { ProgressionSystem } from './game/systems/progression.js';
@@ -112,8 +113,8 @@ async function initGame(classId = 'warrior') {
   const abTesting = new ABTestingSystem(playerId);
   const dataLog = new DataLoggingSystem();
 
-  telemetry.connect(`ws://localhost:3000/ws?channel=telemetry&playerId=${encodeURIComponent(playerId)}`);
-  dataLog.connect('ws://localhost:3000/ws?channel=data');
+  telemetry.connect(`${WS_BASE}/ws?channel=telemetry&playerId=${encodeURIComponent(playerId)}`);
+  dataLog.connect(`${WS_BASE}/ws?channel=data`);
 
   let progressionSystem = null;
   function emitEvent(event) {
@@ -777,10 +778,10 @@ async function initGame(classId = 'warrior') {
     if (telemetry.totalRecorded < 10) return;
     const body = JSON.stringify(buildMatchRecord());
     if (beacon && navigator.sendBeacon) {
-      navigator.sendBeacon('http://localhost:3001/api/matches', body);
+      navigator.sendBeacon(`${API_BASE}/api/matches`, body);
       return;
     }
-    fetch('http://localhost:3001/api/matches', {
+    fetch(`${API_BASE}/api/matches`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body,
@@ -855,7 +856,7 @@ async function initGame(classId = 'warrior') {
 
 async function loadRuntimeBalance() {
   try {
-    const response = await fetch('http://localhost:3000/api/runtime-config');
+    const response = await fetch(`${API_BASE}/api/runtime-config`);
     if (!response.ok) throw new Error(`HTTP ${response.status}`);
     const config = await response.json();
     for (const [enemyId, values] of Object.entries(config.enemies || {})) {

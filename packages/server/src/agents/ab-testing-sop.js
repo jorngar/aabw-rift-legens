@@ -17,10 +17,10 @@
 //   node packages/server/src/agents/ab-testing-sop.js
 //   AB_TESTING_BASE=http://localhost:5173 node .../ab-testing-sop.js --verdict-only
 // ============================================================
-import { execSync } from 'node:child_process';
 import { createInterface } from 'node:readline/promises';
 import { existsSync } from 'node:fs';
 import * as scoring from '@rift-seed/shared/scoring.js';
+import { pool, closePool } from '../db/pool.js';
 
 const BASE  = process.env.AB_TESTING_BASE || 'http://localhost:3000';
 const MODES = new Set(['--verdict-only', '--promote-winner', '--cancel']);
@@ -28,25 +28,21 @@ const MODE  = process.argv.find((a) => MODES.has(a)) || '--interactive';
 
 // ---- Step 0: prereqs -----------------------------------------------
 
-function checkDocker() {
-  try { execSync('docker ps --format "{{.Names}}" | grep -q rift-seed-postgres', { stdio: 'ignore' }); }
-  catch { throw new Error('rift-seed-postgres container is not running'); }
+async function checkDb() {
+  try { await pool.query('SELECT 1'); }
+  catch { throw new Error('Postgres not reachable via DATABASE_URL — is the DB up?'); }
 }
 
 async function checkLb() {
   try { const r = await fetch(`${BASE}/api/lb/weights`); if (!r.ok) throw 0; }
-  catch { throw new Error(`LB not responding at ${BASE} — run 'pnpm dev:lb-all'`); }
+  catch { throw new Error(`LB not responding at ${BASE} — run 'pnpm dev:lb-all' or set AB_TESTING_BASE`); }
 }
 
-function singleActivePatchId() {
-  const raw = execSync(
-    `docker exec rift-seed-postgres psql -U rift -d rift_seed -t -c "SELECT id FROM patches WHERE status='active';"`,
-    { encoding: 'utf8' },
-  );
-  const ids = raw.split('\n').map((s) => s.trim()).filter(Boolean);
-  if (ids.length === 0) throw new Error('no active patch — nothing to A/B');
-  if (ids.length > 1) throw new Error(`${ids.length} active patches; skill supports exactly one (see plan.md → Locked Decisions)`);
-  return Number(ids[0]);
+async function singleActivePatchId() {
+  const { rows } = await pool.query(`SELECT id FROM patches WHERE status='active'`);
+  if (rows.length === 0) throw new Error('no active patch — nothing to A/B');
+  if (rows.length > 1) throw new Error(`${rows.length} active patches; skill supports exactly one (see plan.md → Locked Decisions)`);
+  return Number(rows[0].id);
 }
 
 // ---- Step 1-2: fetch + compute -------------------------------------
@@ -148,7 +144,7 @@ async function executePromote(verdict, patchId) {
   console.log(`\n[PROMOTE] LB weights shifted → A=${body.A}% B=${body.B}% at ${payload.at}`);
 
   if (existsSync('packages/shared/src/maps/patch-v02/index.js')) {
-    execSync(`docker exec rift-seed-postgres psql -U rift -d rift_seed -c "UPDATE patches SET status='completed' WHERE id=${patchId};"`, { stdio: 'inherit' });
+    await pool.query(`UPDATE patches SET status='completed' WHERE id=$1`, [patchId]);
     console.log(`[PROMOTE] Flipped patch id=${patchId} to status='completed' (patch-v02 now takes over)`);
   } else {
     console.log('[PROMOTE] patch-v02 not present — kept patch-v01 active (Phase 4 not deployed)');
@@ -158,9 +154,9 @@ async function executePromote(verdict, patchId) {
 // ---- Main ----------------------------------------------------------
 
 async function main() {
-  checkDocker();
+  await checkDb();
   await checkLb();
-  const patchId = singleActivePatchId();
+  const patchId = await singleActivePatchId();
 
   const { summary, breakdowns } = await fetchSnapshot();
   const verdict = computeVerdictFor(patchId, summary, breakdowns);
@@ -187,4 +183,6 @@ async function main() {
   console.log('\nReminder: LB weights RESET on LB restart (documented as future work).');
 }
 
-main().catch((err) => { console.error(`[ab-testing] abort: ${err.message}`); process.exit(1); });
+main()
+  .catch((err) => { console.error(`[ab-testing] abort: ${err.message}`); process.exitCode = 1; })
+  .finally(() => closePool('ab-testing-sop-exit'));

@@ -4,6 +4,7 @@
 // ============================================================
 import { EventType } from '@rift-seed/shared/events';
 import { SKILLS, AB_TESTS, RANKS } from '@rift-seed/shared/config';
+import { API_BASE, WS_BASE } from '../infrastructure/runtime-endpoints.js';
 
 export class AgentPanel {
   constructor(telemetry, abTesting, dataLog, progression) {
@@ -533,8 +534,8 @@ export class AgentPanel {
     this._serverRefreshInFlight = true;
     try {
       const [telemetryResponse, hermesResponse] = await Promise.all([
-        fetch('http://localhost:3001/api/telemetry'),
-        fetch('http://localhost:3001/api/agents/hermes'),
+        fetch(`${API_BASE}/api/telemetry`),
+        fetch(`${API_BASE}/api/agents/hermes`),
       ]);
       if (telemetryResponse.ok) this.serverTelemetry = await telemetryResponse.json();
       // While our own analyze request is in flight, don't let this poll clobber
@@ -543,7 +544,7 @@ export class AgentPanel {
       if (this.visible && this.activeTab === 'telemetry') this.render();
     } catch {
       if (!this._analyzeInFlight) {
-        this.hermesState = { ...this.hermesState, status: 'offline', lastError: 'Server unavailable on localhost:3001 — run `pnpm dev:server`' };
+        this.hermesState = { ...this.hermesState, status: 'offline', lastError: `Server unavailable at ${API_BASE || 'same origin'} — run \`pnpm dev:lb-all\` or set VITE_API_BASE` };
       }
     } finally {
       this._serverRefreshInFlight = false;
@@ -557,7 +558,7 @@ export class AgentPanel {
     this.hermesState = { ...this.hermesState, status: 'analyzing', lastError: null };
     this.render();
     try {
-      const response = await fetch('http://localhost:3001/api/agents/hermes/analyze', {
+      const response = await fetch(`${API_BASE}/api/agents/hermes/analyze`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ patchId: this.telemetry.currentPatchId }),
@@ -581,7 +582,7 @@ export class AgentPanel {
 
   async _applyHermesPatch(patchId) {
     try {
-      const response = await fetch(`http://localhost:3001/api/patches/${encodeURIComponent(patchId)}/apply`, { method: 'POST' });
+      const response = await fetch(`${API_BASE}/api/patches/${encodeURIComponent(patchId)}/apply`, { method: 'POST' });
       const body = await response.json();
       if (!response.ok) throw new Error(body.error || 'Patch apply failed');
       this.hermesState = { ...this.hermesState, status: 'ready', latestProposal: body, lastError: null };
@@ -612,7 +613,7 @@ export class AgentPanel {
 
   _connectWS() {
     try {
-      this.ws = new WebSocket('ws://localhost:3001/ws?channel=dashboard');
+      this.ws = new WebSocket(`${WS_BASE}/ws?channel=dashboard`);
       this.ws.onopen = () => console.log('[AgentPanel] WS connected');
       this.ws.onclose = () => setTimeout(() => this._connectWS(), 5000);
       this.ws.onmessage = (message) => {
