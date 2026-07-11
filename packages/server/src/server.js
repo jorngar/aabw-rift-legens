@@ -16,6 +16,7 @@ import { verifyConnection as verifyPostgresConnection } from './db/pool.js';
 import { seedPatches } from './patch-seeder.js';
 import { SessionManager } from './session-manager.js';
 import { compressSession } from './path-compressor.js';
+import { fetchAllData, fetchSummary } from './ab-data-viewer.js';
 
 const app = express();
 app.use(cors());
@@ -186,6 +187,25 @@ app.post('/api/telemetry/events', (req, res) => {
 app.get('/api/ab-tests', async (req, res) => {
   try {
     res.json(await abAgent.getSnapshot());
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// Full data dump for debugging + demoing.  ?limit=100 to widen the caps.
+app.get('/api/ab-tests/data', async (req, res) => {
+  try {
+    const limit = Math.min(500, Math.max(1, parseInt(req.query.limit) || 50));
+    res.json(await fetchAllData({ limit }));
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// Compact per-variant KPI summary (one row per patch × variant).
+app.get('/api/ab-tests/summary', async (req, res) => {
+  try {
+    res.json(await fetchSummary());
   } catch (err) {
     res.status(500).json({ error: err.message });
   }

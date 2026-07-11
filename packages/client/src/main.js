@@ -108,6 +108,11 @@ async function initGame(classId = 'warrior') {
   try {
     abAssignment = await telemetry.handshake(playerId, { timeoutMs: 4000 });
     console.log(`[A/B] variant ${abAssignment.variant} (${abAssignment.patchName}) session=${abAssignment.sessionId}`);
+    // Feed the real variant back into the legacy ABTestingSystem map so
+    // the AgentPanel dashboard (which still reads getVariant('shadowStrikeCooldown'))
+    // shows the correct A/B badge instead of always defaulting to 'A'.
+    abTesting.assignments.set('shadowStrikeCooldown', abAssignment.variant);
+    abTesting.assignments.set(`patch-${abAssignment.patchId}`, abAssignment.variant);
   } catch (err) {
     console.warn('[A/B] handshake failed, falling back to procedural map:', err.message);
   }
