@@ -16,9 +16,12 @@ export default defineConfig({
   server: {
     port: 5173,
     proxy: {
-      '/api': 'http://localhost:3001',
+      // Route everything through the LB (port 3000). The LB weight-random
+      // routes WS upgrades to pool A (:3001) or pool B (:3002) and round-
+      // robins HTTP calls between them.
+      '/api': 'http://localhost:3000',
       '/ws': {
-        target: 'ws://localhost:3001',
+        target: 'ws://localhost:3000',
         ws: true,
       },
     },

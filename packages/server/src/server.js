@@ -32,7 +32,13 @@ const dataAgent = new DataCleaningAgent();
 const hermesAgent = new HermesBalanceAgent({ telemetryAgent });
 // A/B collection session lifecycle (Postgres). Path compression runs
 // asynchronously after a session ends — never blocks the WS handler.
+// SERVER_VARIANT env pins this pool to a single variant (LB mode).
+const HARDCODED_VARIANT = process.env.SERVER_VARIANT || null;
+if (HARDCODED_VARIANT && !['A', 'B'].includes(HARDCODED_VARIANT)) {
+  throw new Error(`SERVER_VARIANT must be 'A' or 'B' (got: ${HARDCODED_VARIANT})`);
+}
 const sessionManager = new SessionManager({
+  hardcodedVariant: HARDCODED_VARIANT,
   onSessionEnded: (sessionId) => {
     compressSession(sessionId).catch(err => {
       console.error('[Compressor] onSessionEnded chain failed:', err.message);
@@ -323,9 +329,13 @@ async function start() {
   } catch (err) {
     console.warn(`[DB] Postgres unreachable — A/B collection disabled: ${err.message}`);
   }
-  httpServer.listen(SERVER.PORT, () => {
-    console.log(`[RiftSEED Server] Running on http://localhost:${SERVER.PORT}`);
-    console.log(`[RiftSEED Server] WebSocket on ws://localhost:${SERVER.PORT}/ws`);
+  const PORT = Number(process.env.PORT) || SERVER.PORT;
+  httpServer.listen(PORT, () => {
+    console.log(`[RiftSEED Server] Running on http://localhost:${PORT}`);
+    console.log(`[RiftSEED Server] WebSocket on ws://localhost:${PORT}/ws`);
+    if (HARDCODED_VARIANT) {
+      console.log(`[RiftSEED Server] POOL MODE — hardcoded to variant ${HARDCODED_VARIANT}`);
+    }
     console.log(`[RiftSEED Server] Agents: Telemetry SDK, Hermes Balance, A/B Testing, Data Cleaning`);
     console.log(`[RiftSEED Server] Database: SQLite (game.db) + Postgres (A/B collection)`);
     console.log(`[RiftSEED Server] Classes: ${getClasses().map(c => c.name).join(', ')}`);

@@ -19,14 +19,21 @@ const IDLE_TIMEOUT_MS = 60_000;
 
 export class SessionManager {
   /**
-   * @param {{ onSessionEnded?: (sessionId: string, entry: object) => void }} [opts]
+   * @param {{
+   *   onSessionEnded?: (sessionId: string, entry: object) => void,
+   *   hardcodedVariant?: 'A' | 'B' | null
+   * }} [opts]
    */
-  constructor({ onSessionEnded } = {}) {
+  constructor({ onSessionEnded, hardcodedVariant } = {}) {
     /** @type {Map<any, object>} ws -> entry */
     this.sessions = new Map();
     /** @type {Map<string, any>} playerId -> ws (active connection tracker) */
     this.playerToWs = new Map();
     this.onSessionEnded = onSessionEnded || null;
+    // When set (via SERVER_VARIANT env), this pool serves ONLY this variant
+    // regardless of the deterministic playerId hash. The LB in front decides
+    // routing; this pool just does what it's told.
+    this.hardcodedVariant = hardcodedVariant || null;
   }
 
   /**
@@ -60,8 +67,10 @@ export class SessionManager {
       variantB: patchRow.variant_b,
     };
 
-    const variantHash = hashPlayerToVariant(playerId, String(patchId));
-    const { variant } = await upsertAssignment({ playerId, patchId, variant: variantHash });
+    // If this pool is variant-pinned (LB mode), use that. Otherwise fall
+    // back to the deterministic playerId hash so single-server dev still works.
+    const chosenVariant = this.hardcodedVariant || hashPlayerToVariant(playerId, String(patchId));
+    const { variant } = await upsertAssignment({ playerId, patchId, variant: chosenVariant });
     const sessionId = await createSession({ playerId, patchId, variant });
 
     const entry = {

@@ -33,16 +33,17 @@ export async function countPatches() {
 
 // ---------- Assignments ----------
 
-// First assignment wins — variant is immutable for audit purposes.
-// Deterministic hash means a repeat of the same (playerId, patchId) will
-// try to insert the same variant anyway; on conflict we return the row
-// already stored so callers always get the authoritative variant.
+// Last write wins on the assignments table. The immutable-audit story
+// lives in `sessions.variant` (which records what actually happened for
+// that play attempt). The assignments row is the CURRENT variant for
+// this player — which may flip when the LB routes them to a different
+// pool on a subsequent session.
 export async function upsertAssignment({ playerId, patchId, variant }) {
   const { rows } = await pool.query(
     `INSERT INTO assignments (player_id, patch_id, variant)
      VALUES ($1, $2, $3)
      ON CONFLICT (player_id, patch_id) DO UPDATE
-       SET variant = assignments.variant   -- no-op, forces RETURNING to run
+       SET variant = EXCLUDED.variant
      RETURNING id, variant`,
     [playerId, patchId, variant]
   );
