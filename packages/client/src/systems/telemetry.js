@@ -106,6 +106,15 @@ export class GameTelemetrySDK {
     this.playerEntityId = player?.id ?? this.playerEntityId;
   }
 
+  /**
+   * Override the internal sessionId with the server-generated UUID
+   * from a session:init handshake. Call once, right after the handshake.
+   */
+  setSessionId(sessionId) {
+    if (!sessionId) return;
+    this.sessionId = sessionId;
+  }
+
   _normalize(event) {
     const timestamp = Number(event.timestamp) || Date.now();
     const actorId = event.actorId ?? event.attackerId ?? event.playerId ?? null;
@@ -157,6 +166,11 @@ export class GameTelemetrySDK {
         tier: event.tier ?? null,
         result: event.result || null,
       },
+      // Passthrough bucket so new event types (trajectory:sample,
+      // path:stuck, item:purchase, combat:engaged, ...) can carry
+      // arbitrary fields to server-side fanOut without teaching the
+      // normalizer about every payload shape.
+      payload: event.payload || null,
     };
   }
 
