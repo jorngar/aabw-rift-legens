@@ -2,6 +2,7 @@
 // Input Handler — class-aware, proper controls
 // ============================================================
 import { screenToTile } from '../core/isometric.js';
+import { isBlocked } from '@rift-seed/shared/patch';
 import { SKILLS } from '@rift-seed/shared/config';
 
 /**
@@ -84,6 +85,12 @@ export function setupInput({ canvas, camera, player, world, emitEvent, useSkillF
       player.targetPos = { x: clickedEnemy.pos.x, y: clickedEnemy.pos.y };
       player.attackTarget = clickedEnemy;
     } else {
+      // Reject clicks outside the grid or on a wall — the map edge is
+      // now a hard boundary (matches the 10x10 A/B variants).
+      const rows = world.grid?.length || 0;
+      const cols = world.grid?.[0]?.length || 0;
+      const inBounds = tx >= 0 && ty >= 0 && tx < cols && ty < rows;
+      if (!inBounds || isBlocked(world.grid[ty][tx])) return;
       player.targetPos = { x: tx, y: ty };
       player.attackTarget = null;
     }

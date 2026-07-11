@@ -282,33 +282,20 @@ export const MAP = Object.freeze({
   DUNGEON_HEIGHT: 12,
 });
 
-/** A/B test definitions — each defines what varies and the KPIs to track */
-export const AB_TESTS = Object.freeze({
-  shadowStrikeCooldown: {
-    name: 'Shadow Strike Cooldown',
-    param: 'skills.shadowStrike.cooldownMs',
-    variants: {
-      A: { value: 3000, label: '3s cooldown' },
-      B: { value: 2000, label: '2s cooldown' },
-    },
-    primaryKpi: 'session_duration',
-    secondaryKpis: ['skill_usage_count', 'death_count', 'completion_rate'],
-    minSamples: 10,
-    significanceLevel: 0.05,
-  },
-  enemyDensity: {
-    name: 'Dungeon Enemy Density',
-    param: 'dungeon.enemyCount',
-    variants: {
-      A: { value: 5, label: '5 enemies' },
-      B: { value: 8, label: '8 enemies' },
-    },
-    primaryKpi: 'completion_rate',
-    secondaryKpis: ['death_count', 'session_duration', 'xp_per_minute'],
-    minSamples: 10,
-    significanceLevel: 0.05,
-  },
-});
+// -----------------------------------------------------------------
+// Patch registry moved to patches-loader.js (server-only — uses node:fs).
+// Client imports from this file for browser-safe config only; server
+// imports PATCHES directly from '@rift-seed/shared/patches-loader.js'.
+// -----------------------------------------------------------------
+
+/**
+ * Legacy AB_TESTS stub — deliberately empty.
+ * Old param-level test scaffolding (skill-cooldown, enemy-density) is
+ * superseded by PATCHES. Kept as an empty frozen object so downstream
+ * imports do not crash while Phases 3 and 5 rewrite the consumers.
+ * TODO: delete after ab-testing-agent.js and client ab-testing.js migrate.
+ */
+export const AB_TESTS = Object.freeze({});
 
 /** Server config */
 export const SERVER = Object.freeze({

@@ -2,13 +2,42 @@
 // Shop UI — HTML overlay
 // ============================================================
 import { ITEMS, WEAPONS } from '@rift-seed/shared/config';
+import { EventType } from '@rift-seed/shared/events';
 
 export class ShopUI {
-  constructor(inventory) {
+  /**
+   * @param {Object} inventory
+   * @param {{ emitEvent?: (event: object) => void, playerId?: string, getPlayerPos?: () => {x:number,y:number} }} [opts]
+   */
+  constructor(inventory, opts = {}) {
     this.inventory = inventory;
     this.visible = false;
     this.el = null;
     this.activeTab = 'buy';
+    this.emitEvent = opts.emitEvent || null;
+    this.playerId = opts.playerId || null;
+    this.getPlayerPos = opts.getPlayerPos || (() => null);
+  }
+
+  /**
+   * Report an in-game shop purchase to the A/B collection layer.
+   * No-op if no emitter was wired (e.g. offline mode).
+   */
+  _emitPurchase(itemId, item, goldBefore) {
+    if (!this.emitEvent) return;
+    const pos = this.getPlayerPos() || {};
+    this.emitEvent({
+      type: EventType.ITEM_PURCHASE,
+      playerId: this.playerId,
+      payload: {
+        itemId,
+        price: item.price ?? 0,
+        goldBefore,
+        goldAfter: this.inventory.gold,
+        x: pos.x ?? null,
+        y: pos.y ?? null,
+      },
+    });
   }
 
   init() {
@@ -87,8 +116,10 @@ export class ShopUI {
         const id = btn.dataset.buy;
         const item = ITEMS[id] || WEAPONS[id];
         if (item && this.inventory.gold >= item.price) {
+          const goldBefore = this.inventory.gold;
           this.inventory.gold -= item.price;
           this.inventory.addItem(id);
+          this._emitPurchase(id, item, goldBefore);
           this.render();
         }
       });

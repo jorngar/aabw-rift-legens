@@ -5,12 +5,15 @@ import * as PIXI from 'pixi.js';
 import { loadRiftAssets } from './infrastructure/assets/rift-asset-loader.js';
 import { Camera, getDirection, tileToScreen, tileDistance } from './game/core/isometric.js';
 import { renderTileMap, generateGardenMap } from './game/core/tilemap.js';
+import { isBlocked } from '@rift-seed/shared/patch';
 import { World, createEntity } from './game/core/ecs.js';
 import { meleeAttack, combatTick, useSkill } from './game/core/combat.js';
 import { movementSystem, spriteSyncSystem, enemyAISystem, depthSortSystem, playerCombatSystem } from './game/systems/game-systems.js';
 import { TelemetrySystem } from './infrastructure/analytics/telemetry.js';
 import { ABTestingSystem } from './infrastructure/analytics/ab-testing.js';
 import { DataLoggingSystem } from './infrastructure/analytics/data-logging.js';
+import { TrajectorySampler } from './game/systems/trajectory-sampler.js';
+import { DefectDetector } from './game/systems/defect-detector.js';
 import { ProgressionSystem } from './game/systems/progression.js';
 import { RiftSystem } from './game/systems/rift-system.js';
 import { InventorySystem } from './game/systems/inventory-system.js';
@@ -95,6 +98,10 @@ async function initGame(classId = 'warrior') {
   const runtimePlayerDefaults = await loadRuntimeBalance();
 
   // ---- Init Systems ----
+  // A/B routing is decided by the LB — the client just needs a random
+  // handle so the server can key its session row and reconnect logic.
+  // We do not track individual players; the dashboard aggregates by
+  // variant only.
   const playerId = 'player_' + Math.random().toString(36).slice(2, 8);
   const telemetry = new TelemetrySystem({
     playerId,
@@ -104,8 +111,8 @@ async function initGame(classId = 'warrior') {
   const abTesting = new ABTestingSystem(playerId);
   const dataLog = new DataLoggingSystem();
 
-  telemetry.connect('ws://localhost:3001/ws?channel=telemetry');
-  dataLog.connect('ws://localhost:3001/ws?channel=data');
+  telemetry.connect(`ws://localhost:3000/ws?channel=telemetry&playerId=${encodeURIComponent(playerId)}`);
+  dataLog.connect('ws://localhost:3000/ws?channel=data');
 
   let progressionSystem = null;
   function emitEvent(event) {
@@ -115,9 +122,27 @@ async function initGame(classId = 'warrior') {
 
   abTesting.assignAll(emitEvent);
 
+  // A/B: request server-side variant + map. Non-fatal if server is down —
+  // fall back to procedural garden so the game still boots offline.
+  let abAssignment = null;
+  try {
+    abAssignment = await telemetry.handshake(playerId, { timeoutMs: 4000 });
+    console.log(`[A/B] variant ${abAssignment.variant} (${abAssignment.patchName}) session=${abAssignment.sessionId}`);
+    // Feed the real variant back into the legacy ABTestingSystem map so
+    // the AgentPanel dashboard (which still reads getVariant('shadowStrikeCooldown'))
+    // shows the correct A/B badge instead of always defaulting to 'A'.
+    abTesting.assignments.set('shadowStrikeCooldown', abAssignment.variant);
+    abTesting.assignments.set(`patch-${abAssignment.patchId}`, abAssignment.variant);
+  } catch (err) {
+    console.warn('[A/B] handshake failed, falling back to procedural map:', err.message);
+  }
+
   // ---- Create World ----
   const world = new World();
-  const grid = generateGardenMap(20, 20);
+  // Use server-assigned garden map if available; otherwise fall back to
+  // the legacy procedural 20x20.
+  const gardenMap = abAssignment?.mapConfig?.garden;
+  const grid = gardenMap ? gardenMap.tiles : generateGardenMap(20, 20);
   world.grid = grid;
 
   // ---- Render Tile Map ----
@@ -129,8 +154,9 @@ async function initGame(classId = 'warrior') {
 
   app.stage.addChild(camera.container);
 
-  // Snap camera to player start position immediately
-  const startScreen = tileToScreen(8, 8);
+  // Snap camera to the assigned spawn (or legacy 8,8 fallback).
+  const spawnTile = gardenMap?.spawn || { x: 8, y: 8 };
+  const startScreen = tileToScreen(spawnTile.x, spawnTile.y);
   camera.targetX = startScreen.x;
   camera.targetY = startScreen.y;
   camera.container.x = app.screen.width / 2 - startScreen.x;
@@ -173,7 +199,7 @@ async function initGame(classId = 'warrior') {
   const playerEntity = createEntity({
     isPlayer: true,
     name: 'SEED Cadet',
-    pos: { x: 8, y: 8 },
+    pos: { x: spawnTile.x, y: spawnTile.y },
     targetPos: null,
     path: null,
     direction: 'S',
@@ -204,12 +230,26 @@ async function initGame(classId = 'warrior') {
   progressionSystem = new ProgressionSystem(playerEntity, emitEvent);
   const inventorySystem = new InventorySystem(playerEntity, emitEvent);
   const riftSystem = new RiftSystem(playerEntity, world, assets, camera, emitEvent, progressionSystem);
+  // Hand the A/B-assigned map bundle over so the rift renders the
+  // assigned dungeon variant instead of the procedural fallback.
+  if (abAssignment?.mapConfig) {
+    riftSystem.setVariantMaps(abAssignment.mapConfig);
+    // Move the garden's portal marker so the "Press F to enter Rift"
+    // prompt shows near the actual assigned portal tile.
+    if (abAssignment.mapConfig.garden?.portal) {
+      riftSystem.portalPos = { ...abAssignment.mapConfig.garden.portal };
+    }
+  }
 
   // ---- Init UI ----
   const agentPanel = new AgentPanel(telemetry, abTesting, dataLog, progressionSystem);
   agentPanel.init();
 
-  const shopUI = new ShopUI(inventorySystem);
+  const shopUI = new ShopUI(inventorySystem, {
+    emitEvent,
+    playerId,
+    getPlayerPos: () => playerEntity.pos,
+  });
   shopUI.init();
 
   const purchaseUI = new PurchaseSimulator(inventorySystem, emitEvent);
@@ -299,19 +339,57 @@ async function initGame(classId = 'warrior') {
   }
 
   if (!riftSystem.inDungeon) {
-    // Spawn enemies AWAY from player start (8,8) — safe zone radius of 5
-    spawnEnemy('shadowBeast', 3, 3);     // stable ID; presented as Rift Slime
-    spawnEnemy('shadowBeast', 14, 4);    // upper-right
-    spawnEnemy('shadowBeast', 3, 14);    // lower-left
-    spawnEnemy('shadowBeast', 14, 14);   // lower-right
-    spawnEnemy('shadowBeast', 10, 3);    // near portal
-    spawnEnemy('riftKnight', 15, 10);    // far right boss
+    if (gardenMap?.enemySpawns?.length) {
+      // Use the assigned patch's hand-designed enemy positions.
+      for (const s of gardenMap.enemySpawns) {
+        spawnEnemy(s.type || 'shadowBeast', s.x, s.y);
+      }
+    } else {
+      // Legacy 20x20 procedural fallback: enemies AWAY from player start.
+      spawnEnemy('shadowBeast', 3, 3);     // stable ID; presented as Rift Slime
+      spawnEnemy('shadowBeast', 14, 4);    // upper-right
+      spawnEnemy('shadowBeast', 3, 14);    // lower-left
+      spawnEnemy('shadowBeast', 14, 14);   // lower-right
+      spawnEnemy('shadowBeast', 10, 3);    // near portal
+      spawnEnemy('riftKnight', 15, 10);    // far right boss
+    }
+  }
+
+  // ---- A/B Data Collection Samplers ----
+  // Only meaningful once we have a real session (i.e. the handshake worked).
+  // trajectory-sampler produces the canonical path artifact; defect-detector
+  // flags stuck / errored playthroughs.
+  let trajSampler = null;
+  let defectDetector = null;
+  if (abAssignment) {
+    trajSampler = new TrajectorySampler({
+      player: playerEntity,
+      emit: emitEvent,
+      playerId,
+      getZone: () => (riftSystem.inDungeon ? 'dungeon' : 'garden'),
+    });
+    trajSampler.start();
+    defectDetector = new DefectDetector({
+      player: playerEntity,
+      emit: emitEvent,
+      playerId,
+    });
+    defectDetector.start();
+
+    // Small HUD chip so testers can visually confirm the variant.
+    const chip = document.createElement('div');
+    chip.textContent = `${abAssignment.variant} · ${abAssignment.patchName}`;
+    chip.title = `session ${abAssignment.sessionId}`;
+    chip.style.cssText = 'position:fixed;bottom:8px;left:8px;padding:4px 10px;background:rgba(10,6,18,0.85);color:#e8ff47;font:11px/1.2 monospace;border:1px solid #e8ff47;border-radius:4px;z-index:900;pointer-events:none;';
+    document.body.appendChild(chip);
   }
 
   // ---- Portal (animated CSS effect) ----
   const { createPortal } = await import('./presentation/portal-effect.js');
   const portalEl = createPortal();
-  const portalPos = { x: 8, y: 3 };
+  // Draw the portal effect on the SAME tile the rift-system uses to gate
+  // entry, so what the player sees matches what "Press F" checks.
+  const portalPos = { ...riftSystem.portalPos };
 
   // ---- Input ----
   const { keys, getMovementInput } = setupInput({
@@ -511,16 +589,30 @@ async function initGame(classId = 'warrior') {
       }
     }
 
-    // WASD movement
+    // WASD movement — bounds from live grid + wall collision
     const { dx, dy } = getMovementInput();
     playerEntity.manualMovement = !playerEntity.isDying && (dx !== 0 || dy !== 0);
     if (!playerEntity.isDying && (dx !== 0 || dy !== 0)) {
       const speed = (playerEntity.stats.speed || 3) * 0.05;
       playerEntity.direction = getDirection(dx, dy);
-      playerEntity.pos.x += dx * speed;
-      playerEntity.pos.y += dy * speed;
-      playerEntity.pos.x = Math.max(1, Math.min(14, playerEntity.pos.x));
-      playerEntity.pos.y = Math.max(1, Math.min(14, playerEntity.pos.y));
+      const cols = world.grid[0]?.length || 20;
+      const rows = world.grid.length || 20;
+      // Player center stays half a tile inside the perimeter wall so the
+      // sprite never overlaps the map edge.
+      const nx = Math.max(0.5, Math.min(cols - 1.5, playerEntity.pos.x + dx * speed));
+      const ny = Math.max(0.5, Math.min(rows - 1.5, playerEntity.pos.y + dy * speed));
+      // Wall collision: check the tile under the proposed feet position
+      // independently for X and Y so the player can slide along a wall.
+      const tileYSameX = Math.round(playerEntity.pos.y);
+      const tileXNew   = Math.round(nx);
+      if (!isBlocked(world.grid[tileYSameX]?.[tileXNew])) {
+        playerEntity.pos.x = nx;
+      }
+      const tileXSameY = Math.round(playerEntity.pos.x);
+      const tileYNew   = Math.round(ny);
+      if (!isBlocked(world.grid[tileYNew]?.[tileXSameY])) {
+        playerEntity.pos.y = ny;
+      }
       playerEntity.isMoving = true;
       playerEntity.targetPos = null;
       playerEntity.path = null;
@@ -720,7 +812,7 @@ async function initGame(classId = 'warrior') {
 
 async function loadRuntimeBalance() {
   try {
-    const response = await fetch('http://localhost:3001/api/runtime-config');
+    const response = await fetch('http://localhost:3000/api/runtime-config');
     if (!response.ok) throw new Error(`HTTP ${response.status}`);
     const config = await response.json();
     for (const [enemyId, values] of Object.entries(config.enemies || {})) {

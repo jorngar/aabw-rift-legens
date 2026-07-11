@@ -1,0 +1,222 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>Rift SEED — A/B Testing Dashboard</title>
+  <style>
+    :root {
+      --bg: #0a0612;
+      --card: #14101f;
+      --border: #2a2a3a;
+      --accent: #e8ff47;
+      --A: #4a9eff;
+      --B: #a855f7;
+      --text: #eaeaea;
+      --dim: #8a8aa0;
+      --winA: rgba(74, 158, 255, 0.9);
+      --winB: rgba(168, 85, 247, 0.9);
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0; padding: 20px; background: var(--bg); color: var(--text);
+      font-family: 'JetBrains Mono', 'SF Mono', Menlo, monospace;
+      font-size: 13px; min-height: 100vh;
+    }
+    header {
+      display: flex; align-items: center; justify-content: space-between;
+      margin-bottom: 20px; padding-bottom: 12px; border-bottom: 1px solid var(--border);
+    }
+    header h1 { margin: 0; font-size: 18px; color: var(--accent); letter-spacing: 1px; }
+    header .meta { color: var(--dim); font-size: 11px; }
+    header .live-dot {
+      display: inline-block; width: 8px; height: 8px; background: #44ff88;
+      border-radius: 50%; margin-right: 6px; animation: pulse 1.5s ease-in-out infinite;
+    }
+    @keyframes pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.3; } }
+
+    .patch-block { margin-bottom: 32px; }
+    .patch-title {
+      font-size: 14px; color: var(--accent); margin-bottom: 12px;
+      display: flex; justify-content: space-between; align-items: baseline;
+    }
+    .patch-title small { color: var(--dim); font-size: 11px; }
+
+    .section-title {
+      margin: 20px 0 10px; font-size: 11px; color: var(--dim);
+      text-transform: uppercase; letter-spacing: 1.5px; font-weight: 500;
+      border-top: 1px dashed var(--border); padding-top: 12px;
+    }
+
+    /* ---- Composite hero -------------------------------------- */
+    .composite-hero {
+      background: linear-gradient(135deg, rgba(232,255,71,0.05), rgba(74,158,255,0.03));
+      border: 1px solid var(--border); border-radius: 6px;
+      padding: 14px 16px; margin-bottom: 16px;
+    }
+    .hero-head { display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px; }
+    .hero-title { font-size: 12px; color: var(--accent); letter-spacing: 0.8px; text-transform: uppercase; }
+    .winner-badge {
+      font-size: 11px; padding: 4px 10px; border-radius: 4px;
+      background: rgba(232,255,71,0.12); color: var(--accent); border: 1px solid rgba(232,255,71,0.35);
+    }
+    .winner-badge.A { color: var(--A); border-color: rgba(74,158,255,0.5); background: rgba(74,158,255,0.1); }
+    .winner-badge.B { color: var(--B); border-color: rgba(168,85,247,0.5); background: rgba(168,85,247,0.1); }
+    .winner-badge.tie { color: var(--dim); border-color: var(--border); background: transparent; }
+    .hero-bar {
+      display: flex; height: 22px; border-radius: 4px; overflow: hidden;
+      background: rgba(255,255,255,0.03);
+    }
+    .hero-bar > div {
+      display: flex; align-items: center; padding: 0 10px; font-size: 11px;
+      color: #fff; font-weight: 500;
+    }
+    .hero-bar-a { background: var(--winA); }
+    .hero-bar-b { background: var(--winB); justify-content: flex-end; }
+    .hero-numbers { display: flex; justify-content: space-between; margin-top: 8px; font-size: 11px; color: var(--dim); }
+    .hero-numbers b { color: var(--text); }
+    .hero-per-kpi { margin-top: 10px; display: flex; flex-wrap: wrap; gap: 6px; }
+    .kpi-pill {
+      font-size: 10px; padding: 3px 8px; border-radius: 3px;
+      border: 1px solid var(--border); color: var(--dim);
+    }
+    .kpi-pill.A { border-color: rgba(74,158,255,0.5); color: var(--A); }
+    .kpi-pill.B { border-color: rgba(168,85,247,0.5); color: var(--B); }
+    .kpi-pill.tie { border-style: dashed; }
+
+    /* ---- Variant KPI cards ----------------------------------- */
+    .variants { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+    .card {
+      background: var(--card); border: 1px solid var(--border);
+      border-radius: 6px; padding: 16px;
+    }
+    .card.A { border-left: 3px solid var(--A); }
+    .card.B { border-left: 3px solid var(--B); }
+    .card h2 { margin: 0 0 12px; font-size: 13px; display: flex; align-items: center; gap: 8px; }
+    .card.A h2 { color: var(--A); }
+    .card.B h2 { color: var(--B); }
+    .card h2 .badge {
+      background: var(--accent); color: #000; font-size: 9px; padding: 2px 6px;
+      border-radius: 3px; letter-spacing: 0.5px;
+    }
+    .kpi-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px 20px; }
+    .kpi { display: flex; flex-direction: column; gap: 2px; }
+    .kpi .label { font-size: 10px; color: var(--dim); text-transform: uppercase; letter-spacing: 0.5px; }
+    .kpi .value { font-size: 17px; color: var(--text); font-weight: 500; }
+    .kpi .unit { font-size: 10px; color: var(--dim); margin-left: 4px; }
+
+    /* ---- Compare bars ---------------------------------------- */
+    .compare { margin-top: 16px; padding-top: 12px; border-top: 1px dashed var(--border); }
+    .compare-row {
+      display: grid; grid-template-columns: 100px 1fr 1fr; gap: 8px;
+      align-items: center; margin-bottom: 6px; font-size: 11px;
+    }
+    .compare-row .metric { color: var(--dim); text-transform: uppercase; letter-spacing: 0.4px; font-size: 10px; }
+    .bar-wrap { position: relative; height: 15px; background: rgba(255,255,255,0.04); border-radius: 3px; overflow: hidden; }
+    .bar-fill { position: absolute; top: 0; bottom: 0; left: 0; border-radius: 3px; transition: width 0.4s ease-out; }
+    .bar-fill.A { background: var(--A); }
+    .bar-fill.B { background: var(--B); }
+    .bar-value { position: absolute; top: 50%; right: 6px; transform: translateY(-50%); font-size: 10px; color: var(--text); text-shadow: 0 0 4px rgba(0,0,0,0.8); }
+    .winner { position: relative; }
+    .winner::before {
+      content: '★'; position: absolute; left: -14px; top: 50%;
+      transform: translateY(-50%); color: var(--accent); font-size: 12px;
+    }
+
+    /* ---- Breakdowns grid ------------------------------------ */
+    .breakdowns-grid {
+      display: grid; grid-template-columns: repeat(auto-fit, minmax(320px, 1fr)); gap: 12px;
+    }
+    .breakdown-card {
+      background: var(--card); border: 1px solid var(--border); border-radius: 6px; padding: 12px 14px;
+    }
+    .breakdown-card h3 { margin: 0 0 6px; font-size: 11px; color: var(--text); text-transform: uppercase; letter-spacing: 0.8px; }
+    .breakdown-legend { font-size: 10px; color: var(--dim); margin-bottom: 8px; }
+    .dot {
+      display: inline-block; width: 8px; height: 8px; border-radius: 50%;
+      vertical-align: middle; margin: 0 4px;
+    }
+    .dot.A { background: var(--A); }
+    .dot.B { background: var(--B); }
+    .breakdown-body { display: flex; flex-direction: column; gap: 6px; }
+    .breakdown-row {
+      display: grid; grid-template-columns: 100px 1fr; gap: 8px; align-items: center;
+    }
+    .breakdown-label { font-size: 10px; color: var(--dim); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .twin-bars { display: grid; grid-template-columns: 1fr 1fr; gap: 4px; align-items: center; }
+    .twin-side { display: flex; align-items: center; gap: 4px; }
+    .twin-a { flex-direction: row-reverse; }
+    .twin-num { font-size: 10px; color: var(--text); min-width: 20px; text-align: center; }
+    .twin-track { position: relative; height: 10px; background: rgba(255,255,255,0.04); border-radius: 2px; flex: 1; overflow: hidden; }
+    .twin-a .twin-track { transform: scaleX(-1); }
+    .twin-fill { position: absolute; top: 0; bottom: 0; left: 0; border-radius: 2px; }
+    .twin-fill.A { background: var(--A); }
+    .twin-fill.B { background: var(--B); }
+
+    /* ---- Spatial grid (heatmaps + paths) --------------------- */
+    .spatial-grid {
+      display: grid; grid-template-columns: repeat(auto-fit, minmax(420px, 1fr)); gap: 12px;
+    }
+    .spatial-card {
+      background: var(--card); border: 1px solid var(--border); border-radius: 6px; padding: 12px 14px;
+    }
+    .spatial-card h3 { margin: 0 0 8px; font-size: 11px; color: var(--text); text-transform: uppercase; letter-spacing: 0.8px; display: flex; justify-content: space-between; align-items: baseline; }
+    .spatial-card h3 small { color: var(--dim); font-size: 10px; text-transform: none; letter-spacing: 0; }
+    .spatial-pair { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+    .spatial-side { display: flex; flex-direction: column; gap: 4px; }
+    .spatial-label { font-size: 9px; text-transform: uppercase; letter-spacing: 0.8px; text-align: center; }
+    .spatial-label.A { color: var(--A); }
+    .spatial-label.B { color: var(--B); }
+    .spatial-svg { background: rgba(0,0,0,0.25); border-radius: 4px; }
+
+    /* ---- Events strip + footer ------------------------------ */
+    .events-strip {
+      margin-top: 24px; padding: 12px 16px; background: var(--card);
+      border: 1px solid var(--border); border-radius: 6px;
+    }
+    .events-strip h3 { margin: 0 0 8px; font-size: 11px; color: var(--dim); text-transform: uppercase; letter-spacing: 1px; }
+    .events-tags { display: flex; flex-wrap: wrap; gap: 6px; }
+    .event-tag {
+      background: rgba(232,255,71,0.08); border: 1px solid rgba(232,255,71,0.2);
+      color: var(--accent); padding: 3px 8px; border-radius: 3px;
+      font-size: 10px; display: flex; gap: 6px; align-items: center;
+    }
+    .event-tag .n { color: var(--text); font-weight: 500; }
+    .footer { margin-top: 20px; text-align: center; color: var(--dim); font-size: 10px; }
+    .footer a { color: var(--accent); text-decoration: none; margin: 0 6px; }
+    .footer a:hover { text-decoration: underline; }
+    .empty { color: var(--dim); font-style: italic; text-align: center; padding: 12px; font-size: 11px; }
+    .error { color: #ff5555; padding: 12px; text-align: center; }
+  </style>
+</head>
+<body>
+  <header>
+    <h1>◆ RIFT SEED — A/B TESTING DASHBOARD</h1>
+    <div class="meta">
+      <span class="live-dot"></span>
+      <span id="lb-weights">--</span> ·
+      LIVE · refresh every 3s ·
+      <span id="last-updated">--</span>
+    </div>
+  </header>
+
+  <main id="root">
+    <div class="empty">Loading…</div>
+  </main>
+
+  <div class="events-strip">
+    <h3>Event Stream (all-time counts)</h3>
+    <div class="events-tags" id="events-tags"><span class="empty">…</span></div>
+  </div>
+
+  <div class="footer">
+    Raw JSON:
+    <a href="/api/ab-tests/data" target="_blank">/data</a> ·
+    <a href="/api/ab-tests/summary" target="_blank">/summary</a> ·
+    <a href="/api/ab-tests/breakdowns" target="_blank">/breakdowns</a> ·
+    <a href="/api/ab-tests" target="_blank">/ab-tests</a> ·
+    <a href="/api/health" target="_blank">/health</a>
+  </div>
+
+  <script type="module" src="/src/ab-dashboard/main.js"></script>
+</body>
+</html>
