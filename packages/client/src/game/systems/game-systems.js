@@ -29,7 +29,10 @@ export function movementSystem(world, dt, emitEvent) {
       continue;
     }
 
-    const speed = (entity.stats?.speed || 2) * 0.03;
+    // AI systems may temporarily boost enemy speed (e.g. chase multiplier);
+    // default to 1 so player + patrolling enemies move at their base rate.
+    const speedMult = entity._moveSpeedMult ?? 1;
+    const speed = (entity.stats?.speed || 2) * 0.03 * speedMult;
     entity.pos.x += (dx / dist) * speed;
     entity.pos.y += (dy / dist) * speed;
     entity.direction = getDirection(dx, dy);
@@ -55,9 +58,10 @@ export function spriteSyncSystem(world, dt) {
       }
     }
 
-    // Visual effect indicators
+    // Visual effect indicators — hit-flash uses a bolder red so damage
+    // reads at a glance even during quick swings.
     if ((entity.hitReactUntil || 0) > Date.now()) {
-      entity.sprite.tint = 0xff7777;
+      entity.sprite.tint = 0xff3333;
     } else if (hasEffect(entity.id, 'slow')) {
       entity.sprite.tint = 0x8888ff; // blue tint for slowed
     } else if (hasEffect(entity.id, 'stun')) {
@@ -100,14 +104,24 @@ export function enemyAISystem(world, dt, emitEvent) {
       continue;
     }
 
-    // State transitions
-    if (dist <= (entity.attackRange || def.attackRange)) {
+    // State transitions with STICKY AGGRO: once an enemy has aggroed onto
+    // the player, it keeps chasing until the player breaks LOS well past
+    // the normal aggro range. Without this, kiting a slow enemy out to
+    // aggroRange+ makes it drop back to patrol and the fight resets.
+    const attackRange = entity.attackRange || def.attackRange;
+    const wasEngaged = previousState === 'chasing' || previousState === 'attacking';
+    const disengageRange = def.aggroRange * 1.5;
+    if (dist <= attackRange) {
       entity.aiState = 'attacking';
-    } else if (dist <= def.aggroRange) {
+    } else if (dist <= def.aggroRange || (wasEngaged && dist <= disengageRange)) {
       entity.aiState = 'chasing';
     } else {
       entity.aiState = 'idle';
     }
+    // Chase-speed bonus: enemies move 1.4× while chasing so a slow slime
+    // can actually close the gap on a warrior (2.79) instead of tailing
+    // forever. Attacking / idle drops back to base speed.
+    entity._moveSpeedMult = entity.aiState === 'chasing' ? 1.4 : 1;
 
     // The slime pack includes a hop/fall strip. Play it once when the creature
     // aggroes, then let its normal walk loop carry continued pursuit.

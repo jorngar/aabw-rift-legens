@@ -177,16 +177,25 @@ async function initGame(classId = 'warrior') {
   // Keep only playerShadow as the ground indicator.
   const classColorEl = null;
 
-  // Update skill bar HTML with class-specific skills
+  // Update skill bar HTML with class-specific skills.
+  // Each slot gets a positioned `skill-cd-overlay` div that the game loop
+  // paints with a conic-gradient sweep while the skill is cooling down.
   const classSkills = classConfig.skills;
   const skillBarEl = document.getElementById('skill-bar');
   if (skillBarEl && classSkills) {
     const keys = ['q', 'e', 'r', 't'];
     skillBarEl.innerHTML = classSkills.map((sid, i) => {
       const skill = SKILLS[sid];
-      return `<div class="skill-slot" id="skill-${keys[i]}"><span class="key">${keys[i].toUpperCase()}</span><span style="font-size:16px;">${skill?.icon || '?'}</span><span style="font-size:8px;">${skill?.name || sid}</span></div>`;
+      return `<div class="skill-slot" id="skill-${keys[i]}" style="position:relative;overflow:hidden;">
+        <div class="skill-cd-overlay" id="skill-cd-${keys[i]}" style="position:absolute;inset:0;pointer-events:none;background:transparent;transition:background 60ms linear;"></div>
+        <span class="key" style="position:relative;z-index:2;">${keys[i].toUpperCase()}</span>
+        <span style="font-size:16px;position:relative;z-index:2;">${skill?.icon || '?'}</span>
+        <span style="font-size:8px;position:relative;z-index:2;">${skill?.name || sid}</span>
+      </div>`;
     }).join('');
   }
+  // Cache the overlay refs so the game loop can update them cheaply.
+  const skillCdEls = ['q', 'e', 'r', 't'].map(k => document.getElementById(`skill-cd-${k}`));
 
   // Yellow glow disabled — see classColorEl note above.
   const playerGlow = null;
@@ -574,6 +583,24 @@ async function initGame(classId = 'warrior') {
         `<div class="mission-item${m.done ? ' complete' : ''}">${m.done ? '✓' : '○'} ${m.desc}${m.progress ? ' ('+m.progress+')' : ''}</div>`
       ).join('');
     }
+
+    // Skill cooldown sweeps — conic gradient darkens the slot proportional
+    // to remaining cooldown, then clears when the skill is ready.
+    const nowMs = Date.now();
+    for (let i = 0; i < classSkills.length; i++) {
+      const overlay = skillCdEls[i];
+      if (!overlay) continue;
+      const sid = classSkills[i];
+      const skill = SKILLS[sid];
+      const cdEnd = playerEntity.skillCooldowns?.[sid] || 0;
+      if (!skill || cdEnd <= nowMs) {
+        if (overlay.style.background !== 'transparent') overlay.style.background = 'transparent';
+        continue;
+      }
+      const remainingRatio = Math.min(1, (cdEnd - nowMs) / (skill.cooldownMs || 1000));
+      const sweep = Math.round(remainingRatio * 360);
+      overlay.style.background = `conic-gradient(from -90deg, rgba(0,0,0,0.65) 0deg, rgba(0,0,0,0.65) ${sweep}deg, transparent ${sweep}deg)`;
+    }
   }
 
   // ---- Game Loop ----
@@ -618,7 +645,7 @@ async function initGame(classId = 'warrior') {
             const sx = screen.x + camera.container.x;
             const sy = screen.y + camera.container.y - 30;
             showDamageHit(sx, sy, result.damage, result.isCrit);
-            if (result.isCrit) screenShake(4, 150);
+            if (result.isCrit) screenShake(8, 220);
             if (result.killed) {
               playerEntity.attackTarget = null;
               handleEnemyDefeated(target);

@@ -370,7 +370,7 @@ export function resolveDamage(entity, damage) {
   if (!entity.stats) return { killed: false, damageTaken: 0 };
   const taken = Math.max(1, Math.round(damage * (entity.damageTakenMult ?? 1)));
   entity.stats.hp = Math.max(0, entity.stats.hp - taken);
-  entity.hitReactUntil = Date.now() + 140;
+  entity.hitReactUntil = Date.now() + 200;
   return { killed: entity.stats.hp <= 0, damageTaken: taken };
 }
 
