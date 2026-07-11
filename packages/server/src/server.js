@@ -11,6 +11,7 @@ import { ABTestingAgent } from './agents/ab-testing-agent.js';
 import { DataCleaningAgent } from './agents/data-cleaning-agent.js';
 import { HermesBalanceAgent } from './agents/hermes-balance-agent.js';
 import { getBalance, setBalance, getAllBalance, getMatchHistory, getAdjustments, getClasses, getClass, getAggregateStats, recordMatch, initDB } from './database.js';
+import { getRuntimeConfig } from './runtime-config.js';
 
 const app = express();
 app.use(cors());
@@ -172,6 +173,10 @@ app.post('/api/patches/:id/apply', (req, res) => {
 app.get('/api/balance', (req, res) => {
   const category = req.query.category;
   res.json(getAllBalance(category));
+});
+
+app.get('/api/runtime-config', (req, res) => {
+  res.json(getRuntimeConfig());
 });
 
 app.get('/api/balance/:key', (req, res) => {

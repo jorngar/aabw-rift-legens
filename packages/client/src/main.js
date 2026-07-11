@@ -59,6 +59,9 @@ async function initGame(classId = 'warrior') {
   const assets = await loadRiftAssets();
   console.log('[RiftSEED] Assets loaded:', Object.keys(assets.sheets).join(', '));
 
+  // Approved Hermes patches are published as runtime config for the next session.
+  const runtimePlayerDefaults = await loadRuntimeBalance();
+
   // ---- Init Systems ----
   const playerId = 'player_' + Math.random().toString(36).slice(2, 8);
   const telemetry = new TelemetrySystem({
@@ -152,15 +155,15 @@ async function initGame(classId = 'warrior') {
     isMoving: false,
     attackTarget: null,
     lastAttack: 0,
-    attackCooldownMs: PLAYER_DEFAULTS.attackCooldownMs,
-    attackRange: PLAYER_DEFAULTS.attackRange,
+    attackCooldownMs: runtimePlayerDefaults.attackCooldownMs,
+    attackRange: runtimePlayerDefaults.attackRange,
     stats: {
-      hp: PLAYER_DEFAULTS.hp,
-      maxHp: PLAYER_DEFAULTS.maxHp,
-      mp: PLAYER_DEFAULTS.mp,
-      maxMp: PLAYER_DEFAULTS.maxMp,
-      speed: PLAYER_DEFAULTS.speed,
-      damage: PLAYER_DEFAULTS.attackDamage,
+      hp: runtimePlayerDefaults.hp,
+      maxHp: runtimePlayerDefaults.maxHp,
+      mp: runtimePlayerDefaults.mp,
+      maxMp: runtimePlayerDefaults.maxMp,
+      speed: runtimePlayerDefaults.speed,
+      damage: runtimePlayerDefaults.attackDamage,
     },
     skillCooldowns: {},
     sprite: playerSprite,
@@ -536,4 +539,23 @@ async function initGame(classId = 'warrior') {
   });
 
   console.log('[RiftSEED] Game initialized. WASD=move, click=move/attack, QWER=skills, F=interact, I=inventory, Tab=agents, P=shop');
+}
+
+async function loadRuntimeBalance() {
+  try {
+    const response = await fetch('http://localhost:3001/api/runtime-config');
+    if (!response.ok) throw new Error(`HTTP ${response.status}`);
+    const config = await response.json();
+    for (const [enemyId, values] of Object.entries(config.enemies || {})) {
+      if (ENEMIES[enemyId]) Object.assign(ENEMIES[enemyId], values);
+    }
+    for (const [skillId, values] of Object.entries(config.skills || {})) {
+      if (SKILLS[skillId]) Object.assign(SKILLS[skillId], values);
+    }
+    console.log('[Balance] Loaded approved server config');
+    return { ...PLAYER_DEFAULTS, ...(config.player || {}) };
+  } catch (error) {
+    console.warn('[Balance] Using bundled defaults:', error.message);
+    return { ...PLAYER_DEFAULTS };
+  }
 }

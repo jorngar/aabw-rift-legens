@@ -13,6 +13,7 @@
 - PASS — Evidence attributed 30 weapon damage to `seed_blade`, 1 kill, and 0 player deaths.
 - PASS — Real installed Hermes CLI returned a parsed, validated patch proposal.
 - PASS — Integer rounding regression prevents changes from crossing the ±30% limit.
+- PASS — Approved balance values map to the client runtime config shape.
 
 ## Browser
 

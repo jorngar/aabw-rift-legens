@@ -30,6 +30,7 @@ Before a proposal can be applied, the host validates it:
 - Each change is capped to ±30% of the current value
 - Applying a proposal requires a separate explicit action
 - Every applied value is written to the adjustment audit log
+- Approved values are exposed through `/api/runtime-config` and loaded at the start of the next game session
 
 Hermes proposes a retention hypothesis; it does not claim causality from a single session. Use the existing A/B agent to validate the patch on a follow-up cohort.
 
