@@ -56,6 +56,14 @@ export const EventType = Object.freeze({
   AB_ASSIGNED:    'ab:assigned',
   AB_EXPOSURE:    'ab:exposure',
 
+  // -- A/B Data Collection (Phase 2 additions — for map-variant KPI ingest)
+  PATH_STUCK:        'path:stuck',
+  PATHFIND_FAIL:     'pathfind:fail',
+  IMPOSSIBLE_STATE:  'state:impossible',
+  JS_ERROR:          'js:error',
+  TRAJECTORY_SAMPLE: 'trajectory:sample',
+  ENEMY_ENGAGED:     'combat:engaged',
+
   // -- Agent outputs
   TELEMETRY_REPORT: 'agent:telemetry:report',
   AB_RESULT:        'agent:ab:result',

@@ -95,6 +95,29 @@ export async function initDB() {
     )
   `);
 
+  db.run(`
+    CREATE TABLE IF NOT EXISTS sop_runs (
+      id TEXT PRIMARY KEY,
+      created_at TEXT DEFAULT (datetime('now')),
+      status TEXT,
+      source TEXT,
+      payload TEXT
+    )
+  `);
+
+  db.run(`
+    CREATE TABLE IF NOT EXISTS data_sources (
+      id TEXT PRIMARY KEY,
+      name TEXT,
+      description TEXT,
+      rationale TEXT,
+      kpi_supported TEXT,
+      example_event TEXT,
+      status TEXT DEFAULT 'proposed',
+      created_at TEXT DEFAULT (datetime('now'))
+    )
+  `);
+
   // Seed defaults
   seedDefaults();
   seedClasses();
@@ -368,5 +391,58 @@ const ITEMS_FOR_DASHBOARD = {
   items: ITEMS,
   weapons: WEAPONS,
 };
+
+// ============================================================
+// Telemetry SOP persistence — run audit trail + data source registry
+// ============================================================
+
+export function saveSOPRun(run) {
+  if (!db) return;
+  db.run('INSERT OR REPLACE INTO sop_runs (id, status, source, payload) VALUES (?, ?, ?, ?)',
+    [run.id, run.status, run.source, JSON.stringify(run)]);
+  dirty = true;
+}
+
+export function getSOPRuns(limit = 10) {
+  if (!db) return [];
+  const rows = db.exec('SELECT payload FROM sop_runs ORDER BY created_at DESC LIMIT ?', [limit]);
+  if (rows.length === 0) return [];
+  return rows[0].values.map(([payload]) => {
+    try { return JSON.parse(payload); } catch { return null; }
+  }).filter(Boolean);
+}
+
+export function addDataSources(sources) {
+  if (!db) return;
+  const stmt = db.prepare('INSERT OR REPLACE INTO data_sources (id, name, description, rationale, kpi_supported, example_event, status) VALUES (?, ?, ?, ?, ?, ?, ?)');
+  for (const s of sources) {
+    stmt.run([s.id, s.name, s.description, s.rationale, s.kpiSupported || '', s.exampleEvent ? JSON.stringify(s.exampleEvent) : null, s.status || 'proposed']);
+  }
+  stmt.free();
+  dirty = true;
+}
+
+export function setDataSourceStatus(id, status) {
+  if (!db) return;
+  db.run('UPDATE data_sources SET status = ? WHERE id = ?', [status, id]);
+  dirty = true;
+}
+
+export function getDataSources(status = null) {
+  if (!db) return [];
+  const rows = status
+    ? db.exec('SELECT * FROM data_sources WHERE status = ? ORDER BY created_at DESC', [status])
+    : db.exec('SELECT * FROM data_sources ORDER BY created_at DESC');
+  if (rows.length === 0) return [];
+  const cols = rows[0].columns;
+  return rows[0].values.map(v => {
+    const obj = {};
+    cols.forEach((c, i) => obj[c] = v[i]);
+    if (obj.example_event) {
+      try { obj.example_event = JSON.parse(obj.example_event); } catch { /* leave as string */ }
+    }
+    return obj;
+  });
+}
 
 export { db, saveDB };

@@ -1,107 +1,172 @@
+// ============================================================
+// Repository layer — parameterized inserts + a few reads.
+// All writes go through here. Never string-interpolate user input.
+// ============================================================
 import { pool } from './pool.js';
 
-const EVENT_COLUMNS = [
-  'event_id', 'schema_version', 'session_id', 'player_id', 'patch_id', 'game_version',
-  'event_type', 'occurred_at', 'actor_id', 'actor_type', 'target_id', 'target_type',
-  'enemy_type', 'source_id', 'source_type', 'damage', 'hp_before', 'hp_after',
-  'position_x', 'position_y', 'area', 'class_id', 'player_level', 'enemy_level',
-  'wave', 'tier', 'weapon_class', 'item_type', 'player_rank', 'unit_price', 'quantity',
-  'gold_before', 'gold_after', 'weapon_damage', 'weapon_skill_power', 'weapon_affinity',
-  'payload',
-];
+// ---------- Patches ----------
 
-export function toGameplayEventRow(event) {
-  const metrics = event.metrics || {};
-  const context = event.context || {};
-  const position = event.position || {};
-  return [
-    event.eventId,
-    event.schemaVersion || '1.0.0',
-    event.sessionId,
-    event.playerId ?? null,
-    event.patchId ?? null,
-    event.gameVersion || 'unknown',
-    event.type,
-    new Date(Number(event.timestamp) || Date.now()),
-    event.actor?.id != null ? String(event.actor.id) : null,
-    event.actor?.type ?? null,
-    event.target?.id != null ? String(event.target.id) : null,
-    event.target?.type ?? null,
-    event.target?.enemyType ?? context.enemyType ?? null,
-    event.source?.id != null ? String(event.source.id) : null,
-    event.source?.type ?? null,
-    metrics.damage ?? null,
-    metrics.hpBefore ?? null,
-    metrics.hpAfter ?? null,
-    position.x ?? null,
-    position.y ?? null,
-    context.area ?? null,
-    context.classId ?? null,
-    context.playerLevel ?? null,
-    context.enemyLevel ?? null,
-    context.wave ?? null,
-    context.tier ?? null,
-    context.weaponClass ?? null,
-    context.itemType ?? null,
-    context.rank ?? null,
-    metrics.unitPrice ?? null,
-    metrics.quantity ?? null,
-    metrics.goldBefore ?? null,
-    metrics.goldAfter ?? null,
-    metrics.weaponDamage ?? null,
-    metrics.weaponSkillPower ?? null,
-    metrics.weaponAffinity ?? null,
-    JSON.stringify(event),
-  ];
+export async function insertPatch({ name, description, variantA, variantB }) {
+  const { rows } = await pool.query(
+    `INSERT INTO patches (name, description, variant_a, variant_b)
+     VALUES ($1, $2, $3::jsonb, $4::jsonb) RETURNING id`,
+    [name, description ?? null, JSON.stringify(variantA), JSON.stringify(variantB)]
+  );
+  return rows[0].id;
 }
 
-export function buildGameplayEventInsert(events) {
-  const valid = (events || []).filter(event => event?.eventId && event?.sessionId && event?.type);
-  if (valid.length === 0) return null;
-  const params = [];
-  const values = valid.map((event, rowIndex) => {
-    const row = toGameplayEventRow(event);
-    const offset = rowIndex * EVENT_COLUMNS.length;
-    params.push(...row);
-    return `(${row.map((_, index) => `$${offset + index + 1}${index === EVENT_COLUMNS.length - 1 ? '::jsonb' : ''}`).join(', ')})`;
-  });
-  return {
-    text: `INSERT INTO gameplay_events (${EVENT_COLUMNS.join(', ')}) VALUES ${values.join(', ')} ON CONFLICT (event_id) DO NOTHING`,
-    params,
-    rowCount: valid.length,
-  };
+export async function findActivePatch() {
+  const { rows } = await pool.query(
+    `SELECT id, name, variant_a, variant_b
+       FROM patches
+      WHERE status = 'active'
+      ORDER BY id
+      LIMIT 1`
+  );
+  return rows[0] || null;
 }
 
-export async function insertGameplayEventBatch(events, queryable = pool) {
-  const insert = buildGameplayEventInsert(events);
-  if (!insert) return 0;
-  await queryable.query(insert.text, insert.params);
-  return insert.rowCount;
+export async function countPatches() {
+  const { rows } = await pool.query(`SELECT COUNT(*)::int AS n FROM patches`);
+  return rows[0].n;
 }
 
-export async function upsertGameCatalog(gameVersion, catalog, queryable = pool) {
-  let count = 0;
-  for (const [entityKind, definitions] of Object.entries(catalog)) {
-    for (const [entityId, definition] of Object.entries(definitions)) {
-      await queryable.query(
-        `INSERT INTO game_catalog (game_version, entity_kind, entity_id, definition)
-         VALUES ($1, $2, $3, $4::jsonb)
-         ON CONFLICT (game_version, entity_kind, entity_id)
-         DO UPDATE SET definition = EXCLUDED.definition, updated_at = NOW()`,
-        [gameVersion, entityKind, entityId, JSON.stringify(definition)],
-      );
-      count++;
-    }
-  }
-  return count;
-}
+// ---------- Assignments ----------
 
-export async function getGameplayEventStats(queryable = pool) {
-  const { rows } = await queryable.query(
-    `SELECT COUNT(*)::int AS total_events,
-            COUNT(DISTINCT session_id)::int AS sessions,
-            MAX(ingested_at) AS last_ingested_at
-       FROM gameplay_events`,
+// Last write wins on the assignments table. The immutable-audit story
+// lives in `sessions.variant` (which records what actually happened for
+// that play attempt). The assignments row is the CURRENT variant for
+// this player — which may flip when the LB routes them to a different
+// pool on a subsequent session.
+export async function upsertAssignment({ playerId, patchId, variant }) {
+  const { rows } = await pool.query(
+    `INSERT INTO assignments (player_id, patch_id, variant)
+     VALUES ($1, $2, $3)
+     ON CONFLICT (player_id, patch_id) DO UPDATE
+       SET variant = EXCLUDED.variant
+     RETURNING id, variant`,
+    [playerId, patchId, variant]
   );
   return rows[0];
+}
+
+// ---------- Sessions ----------
+
+export async function createSession({ playerId, patchId, variant }) {
+  const { rows } = await pool.query(
+    `INSERT INTO sessions (player_id, patch_id, variant)
+     VALUES ($1, $2, $3) RETURNING id`,
+    [playerId, patchId, variant]
+  );
+  return rows[0].id;
+}
+
+export async function endSession({
+  sessionId, endReason, finalGold, finalXp, finalLevel, completedRift,
+}) {
+  await pool.query(
+    `UPDATE sessions
+        SET ended_at    = NOW(),
+            duration_ms = (EXTRACT(EPOCH FROM (NOW() - started_at)) * 1000)::int,
+            end_reason  = $2,
+            final_gold  = $3,
+            final_xp    = $4,
+            final_level = $5,
+            completed_rift = COALESCE($6, completed_rift)
+      WHERE id = $1 AND ended_at IS NULL`,
+    [sessionId, endReason, finalGold ?? null, finalXp ?? null, finalLevel ?? null, completedRift ?? null]
+  );
+}
+
+// ---------- Events (raw audit + batch) ----------
+
+export async function insertEventBatch(events) {
+  if (!events || events.length === 0) return;
+  const values = [];
+  const params = [];
+  events.forEach((e, i) => {
+    const b = i * 5;
+    values.push(`($${b+1}, $${b+2}, $${b+3}::jsonb, $${b+4}, $${b+5})`);
+    params.push(e.sessionId, e.eventType, JSON.stringify(e.payload || {}), e.x ?? null, e.y ?? null);
+  });
+  await pool.query(
+    `INSERT INTO events (session_id, event_type, payload, x, y) VALUES ${values.join(',')}`,
+    params
+  );
+}
+
+// ---------- Denormalized per-KPI ----------
+
+export async function insertPurchase({
+  sessionId, patchId, variant, itemId, price, goldBefore, goldAfter,
+}) {
+  await pool.query(
+    `INSERT INTO purchases (session_id, patch_id, variant, item_id, price, gold_before, gold_after)
+     VALUES ($1, $2, $3, $4, $5, $6, $7)`,
+    [sessionId, patchId, variant, itemId, price, goldBefore ?? null, goldAfter ?? null]
+  );
+}
+
+export async function insertDefect({
+  sessionId, patchId, variant, defectType, context, x, y,
+}) {
+  await pool.query(
+    `INSERT INTO defects (session_id, patch_id, variant, defect_type, context, x, y)
+     VALUES ($1, $2, $3, $4, $5::jsonb, $6, $7)`,
+    [sessionId, patchId, variant, defectType, JSON.stringify(context || {}), x ?? null, y ?? null]
+  );
+}
+
+export async function insertDeath({
+  sessionId, patchId, variant, killedBy, x, y, mapZone,
+}) {
+  await pool.query(
+    `INSERT INTO deaths (session_id, patch_id, variant, killed_by, x, y, map_zone)
+     VALUES ($1, $2, $3, $4, $5, $6, $7)`,
+    [sessionId, patchId, variant, killedBy ?? null, x, y, mapZone ?? null]
+  );
+}
+
+export async function insertTrajectoryBatch(rows) {
+  if (!rows || rows.length === 0) return;
+  const values = [];
+  const params = [];
+  rows.forEach((r, i) => {
+    const b = i * 6;
+    values.push(`($${b+1}, $${b+2}, $${b+3}, $${b+4}, $${b+5}, $${b+6})`);
+    params.push(r.sessionId, r.x, r.y, r.vx ?? null, r.vy ?? null, r.mapZone);
+  });
+  await pool.query(
+    `INSERT INTO trajectories (session_id, x, y, vx, vy, map_zone) VALUES ${values.join(',')}`,
+    params
+  );
+}
+
+export async function insertEngagement({
+  sessionId, patchId, variant, enemyType, damageDealt, damageTaken, killed, x, y,
+}) {
+  await pool.query(
+    `INSERT INTO engagements
+      (session_id, patch_id, variant, enemy_type, damage_dealt, damage_taken, killed, x, y)
+     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)`,
+    [sessionId, patchId, variant, enemyType,
+     damageDealt ?? null, damageTaken ?? null, killed ?? null, x ?? null, y ?? null]
+  );
+}
+
+// ---------- Paths / Trajectories cleanup ----------
+
+export async function insertPath({
+  sessionId, patchId, variant, waypoints, sampleCount, compressionRatio,
+}) {
+  await pool.query(
+    `INSERT INTO paths (session_id, patch_id, variant, waypoints, sample_count, compression_ratio)
+     VALUES ($1, $2, $3, $4::jsonb, $5, $6)
+     ON CONFLICT (session_id) DO NOTHING`,
+    [sessionId, patchId, variant, JSON.stringify(waypoints), sampleCount, compressionRatio ?? null]
+  );
+}
+
+export async function deleteTrajectoriesBySession(sessionId) {
+  await pool.query(`DELETE FROM trajectories WHERE session_id = $1`, [sessionId]);
 }

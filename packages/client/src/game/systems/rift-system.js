@@ -6,8 +6,9 @@ import { RIFT_WAVES, ENEMIES } from '@rift-seed/shared/config';
 import { scaleEnemyStats } from '@rift-seed/shared/balance';
 import { tileDistance, tileToScreen } from '../core/isometric.js';
 import { generateDungeonMap, renderTileMap } from '../core/tilemap.js';
+import { isBlocked } from '@rift-seed/shared/patch';
 import { createEntity } from '../core/ecs.js';
-import { createStatefulSprite, enemyAnimationProfile, SLIME_ANIMATION_PROFILE } from './animation-system.js';
+import { createStatefulSprite, ORC_ANIMATION_PROFILE, SLIME_ANIMATION_PROFILE } from './animation-system.js';
 
 export class RiftSystem {
   constructor(player, world, assets, camera, emitEvent, progression, inventory = null) {
@@ -32,11 +33,24 @@ export class RiftSystem {
     this._originalGrid = null;
     this._promptEl = null;
     this._tileContainer = null;
+
+    /** Optional per-variant maps from PATCHES (set after A/B handshake). */
+    this._variantGarden = null;
+    this._variantDungeon = null;
   }
 
   /** Store reference to the tile container for rebuilding */
   setTileContainer(container) {
     this._tileContainer = container;
+  }
+
+  /**
+   * Wire the A/B-assigned map bundle so enter/exit uses the assigned
+   * variant instead of the legacy procedural generator.
+   */
+  setVariantMaps({ garden, dungeon } = {}) {
+    if (garden)  this._variantGarden  = garden;
+    if (dungeon) this._variantDungeon = dungeon;
   }
 
   update(dt) {
@@ -46,20 +60,58 @@ export class RiftSystem {
     }
 
     const dist = tileDistance(this.player.pos, this.portalPos);
-    if (dist < 2.5 && !this.showPrompt) {
-      this.showPrompt = true;
-      this._promptEl = document.createElement('div');
-      this._promptEl.style.cssText = 'position:fixed;bottom:140px;left:50%;transform:translateX(-50%);background:rgba(10,6,18,0.9);border:2px solid #e8ff47;padding:8px 20px;color:#e8ff47;font-family:monospace;font-size:14px;border-radius:6px;z-index:200;pointer-events:none;';
-      this._promptEl.textContent = 'Press F to Enter Rift';
-      document.body.appendChild(this._promptEl);
-    } else if (dist >= 2.5 && this.showPrompt) {
-      this.showPrompt = false;
-      if (this._promptEl) { this._promptEl.remove(); this._promptEl = null; }
+    const near = dist < 2.5;
+
+    if (!near) {
+      if (this.showPrompt) {
+        this.showPrompt = false;
+        if (this._promptEl) { this._promptEl.remove(); this._promptEl = null; }
+      }
+      return;
     }
+
+    // Gate: the portal is CLOSED until every garden enemy is defeated.
+    const remaining = this._gardenEnemiesRemaining();
+    const gateOpen = remaining === 0;
+    const label = gateOpen
+      ? 'Press F to Enter Rift'
+      : `Defeat ${remaining} enemy${remaining === 1 ? '' : 'ies'} to open the Rift`;
+
+    if (!this._promptEl) {
+      this._promptEl = document.createElement('div');
+      this._promptEl.style.cssText = 'position:fixed;bottom:140px;left:50%;transform:translateX(-50%);background:rgba(10,6,18,0.9);padding:8px 20px;font-family:monospace;font-size:14px;border-radius:6px;z-index:200;pointer-events:none;border:2px solid;';
+      document.body.appendChild(this._promptEl);
+    }
+    // Colour reflects state: yellow when open, red when gated.
+    this._promptEl.style.borderColor = gateOpen ? '#e8ff47' : '#ff5555';
+    this._promptEl.style.color       = gateOpen ? '#e8ff47' : '#ff8888';
+    this._promptEl.textContent = label;
+
+    // Track state flags so enterRift() can reject without racing the UI.
+    this.showPrompt = true;
+    this.gateOpen = gateOpen;
+  }
+
+  /**
+   * Count alive garden enemies. Dungeon enemies (spawned by the wave
+   * system into `this.dungeonEnemies`) are excluded — they only exist
+   * once the player is already inside the rift.
+   */
+  _gardenEnemiesRemaining() {
+    const dungeonIds = new Set(this.dungeonEnemies);
+    let n = 0;
+    for (const e of this.world.query('isEnemy', 'stats')) {
+      if (dungeonIds.has(e.id)) continue;
+      if (e.stats.hp > 0) n++;
+    }
+    return n;
   }
 
   enterRift() {
     if (this.inDungeon) return;
+
+    // Gate: refuse until every garden enemy is down.
+    if (this._gardenEnemiesRemaining() > 0) return;
 
     // Tiers above 1 consume a Rift Key (dropped by Rift Knights, sold by merchant)
     if (this.dungeonTier > 1 && this.inventory) {
@@ -79,10 +131,11 @@ export class RiftSystem {
     if (this._promptEl) { this._promptEl.remove(); this._promptEl = null; }
     this.showPrompt = false;
 
-    // Generate dungeon
-    const dungeon = generateDungeonMap(12, 12);
+    // Prefer the A/B-assigned dungeon map; fall back to procedural.
+    const grid = this._variantDungeon?.tiles || generateDungeonMap(12, 12).grid;
+    const spawn = this._variantDungeon?.spawn || { x: 2, y: 2 };
     this._originalGrid = this.world.grid;
-    this.world.grid = dungeon.grid;
+    this.world.grid = grid;
 
     // Clear enemies
     for (const e of this.world.query('isEnemy')) {
@@ -91,10 +144,10 @@ export class RiftSystem {
     }
 
     // Rebuild tilemap
-    this._rebuildTilemap(dungeon.grid);
+    this._rebuildTilemap(grid);
 
-    // Move player
-    this.player.pos = { x: 2, y: 2 };
+    // Move player to the variant's spawn
+    this.player.pos = { x: spawn.x, y: spawn.y };
     this.player.targetPos = null;
     this.player.path = null;
     this.player.attackTarget = null;
@@ -124,9 +177,17 @@ export class RiftSystem {
 
     setTimeout(() => {
       if (!this.inDungeon) return;
+      const grid = this.world.grid;
+      const cols = grid[0]?.length || 12;
+      const rows = grid.length || 12;
       for (let i = 0; i < wave.count; i++) {
-        const x = 3 + Math.floor(Math.random() * 6);
-        const y = 3 + Math.floor(Math.random() * 6);
+        // Reject spawns on walls / rift cracks; give up after a few tries.
+        let x = 0, y = 0;
+        for (let attempt = 0; attempt < 8; attempt++) {
+          x = 2 + Math.floor(Math.random() * Math.max(1, cols - 4));
+          y = 2 + Math.floor(Math.random() * Math.max(1, rows - 4));
+          if (!isBlocked(grid[y]?.[x])) break;
+        }
         this._spawnEnemy(wave.type, x, y);
       }
       this._pendingSpawn = false;
@@ -136,8 +197,8 @@ export class RiftSystem {
   _spawnEnemy(type, x, y) {
     const def = ENEMIES[type] || ENEMIES.shadowBeast;
     const isShadowSlime = type === 'shadowBeast';
-    const visual = createStatefulSprite(this.assets, isShadowSlime ? SLIME_ANIMATION_PROFILE : enemyAnimationProfile('heroHeavy'), {
-      scale: isShadowSlime ? 2 : 1.05,
+    const visual = createStatefulSprite(this.assets, isShadowSlime ? SLIME_ANIMATION_PROFILE : ORC_ANIMATION_PROFILE, {
+      scale: isShadowSlime ? 2 : 2.3,
       anchorY: 0.82,
     });
     const sprite = visual.sprite;
@@ -218,7 +279,9 @@ export class RiftSystem {
       this._rebuildTilemap(this._originalGrid);
     }
 
-    this.player.pos = { x: 8, y: 8 };
+    // Return to the assigned garden's spawn if available, else legacy 8,8.
+    const spawn = this._variantGarden?.spawn || { x: 8, y: 8 };
+    this.player.pos = { x: spawn.x, y: spawn.y };
     this.player.targetPos = null;
     this.player.path = null;
     this.player.stats.hp = this.player.stats.maxHp;

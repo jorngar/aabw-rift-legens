@@ -7,16 +7,21 @@ import { createServer } from 'http';
 import { join, dirname } from 'path';
 import { fileURLToPath } from 'url';
 import { WebSocketServer, WebSocket } from 'ws';
-import { CLASS_STATS, ENEMIES, ITEMS, SERVER, SKILLS, WEAPONS } from '@rift-seed/shared/config';
+import { SERVER } from '@rift-seed/shared/config';
 import { TelemetryAgent } from './agents/telemetry-agent.js';
 import { ABTestingAgent } from './agents/ab-testing-agent.js';
 import { DataCleaningAgent } from './agents/data-cleaning-agent.js';
 import { HermesBalanceAgent } from './agents/hermes-balance-agent.js';
+import { TelemetrySOP } from './agents/telemetry-sop.js';
+import { getDataSources } from './database.js';
 import { getBalance, setBalance, getAllBalance, getMatchHistory, getAdjustments, getClasses, getClass, getAggregateStats, getDashboardData, saveDB, recordMatch, initDB } from './database.js';
 import { getRuntimeConfig } from './runtime-config.js';
-import { closePool, verifyConnection as verifyPostgresConnection } from './db/pool.js';
-import { runMigrations } from './db/migrate.js';
-import { getGameplayEventStats, insertGameplayEventBatch, upsertGameCatalog } from './db/repositories.js';
+import { verifyConnection as verifyPostgresConnection } from './db/pool.js';
+import { seedPatches } from './patch-seeder.js';
+import { SessionManager } from './session-manager.js';
+import { compressSession } from './path-compressor.js';
+import { fetchAllData, fetchSummary } from './ab-data-viewer.js';
+import { fetchBreakdowns } from './ab-breakdowns.js';
 
 const app = express();
 app.use(cors());
@@ -37,23 +42,26 @@ const telemetryAgent = new TelemetryAgent();
 const abAgent = new ABTestingAgent();
 const dataAgent = new DataCleaningAgent();
 const hermesAgent = new HermesBalanceAgent({ telemetryAgent });
-let postgresTelemetryReady = false;
-
-function describeError(error) {
-  if (error?.message?.trim()) return error.message;
-  if (Array.isArray(error?.errors)) {
-    const messages = error.errors.map(item => item?.message).filter(Boolean);
-    if (messages.length) return messages.join('; ');
-  }
-  return String(error || 'unknown error');
+// A/B collection session lifecycle (Postgres). Path compression runs
+// asynchronously after a session ends — never blocks the WS handler.
+// SERVER_VARIANT env pins this pool to a single variant (LB mode).
+const HARDCODED_VARIANT = process.env.SERVER_VARIANT || null;
+if (HARDCODED_VARIANT && !['A', 'B'].includes(HARDCODED_VARIANT)) {
+  throw new Error(`SERVER_VARIANT must be 'A' or 'B' (got: ${HARDCODED_VARIANT})`);
 }
-
-function persistGameplayEvents(events) {
-  if (!postgresTelemetryReady || !events?.length) return;
-  insertGameplayEventBatch(events).catch(error => {
-    console.error('[Postgres] telemetry insert failed:', describeError(error));
-  });
-}
+const sessionManager = new SessionManager({
+  hardcodedVariant: HARDCODED_VARIANT,
+  onSessionEnded: (sessionId) => {
+    compressSession(sessionId).catch(err => {
+      console.error('[Compressor] onSessionEnded chain failed:', err.message);
+    });
+  },
+});
+const telemetrySOP = new TelemetrySOP({
+  telemetryAgent,
+  hermesAgent,
+  onUpdate: run => broadcast('dashboard', { type: 'sop:update', run }),
+});
 
 // ---- WebSocket Routing ----
 const clients = new Map(); // ws -> { type, id }
@@ -65,36 +73,88 @@ wss.on('connection', (ws, req) => {
   else if (url.includes('data')) clientType = 'data';
   else if (url.includes('dashboard')) clientType = 'dashboard';
 
+  // playerId query param — used by the A/B session flow. Fine if absent
+  // for pure dashboard clients that never send session:hello.
+  let playerId = null;
+  try {
+    const parsed = new URL(url, 'ws://placeholder');
+    playerId = parsed.searchParams.get('playerId');
+  } catch { /* ignore */ }
+
   const clientId = `${clientType}_${Date.now()}`;
-  clients.set(ws, { type: clientType, id: clientId });
-  console.log(`[WS] ${clientType} connected (${clients.size} total)`);
+  clients.set(ws, { type: clientType, id: clientId, playerId });
+  console.log(`[WS] ${clientType} connected${playerId ? ` player=${playerId}` : ''} (${clients.size} total)`);
 
   ws.on('message', (raw) => {
+    let msg;
     try {
-      const msg = JSON.parse(raw.toString());
-      handleMessage(ws, msg, clientType);
+      msg = JSON.parse(raw.toString());
     } catch (e) {
       console.error('[WS] Parse error:', e.message);
+      return;
     }
+    handleMessage(ws, msg, clientType).catch(err => {
+      console.error(`[WS] handler error (${msg?.type}):`, err.message);
+    });
   });
 
   ws.on('close', () => {
     clients.delete(ws);
+    sessionManager.endSession(ws, 'disconnect').catch(err => {
+      console.error('[WS] endSession failed on close:', err.message);
+    });
     console.log(`[WS] ${clientType} disconnected (${clients.size} total)`);
   });
 });
 
-function handleMessage(ws, msg, clientType) {
+async function handleMessage(ws, msg, clientType) {
   switch (msg.type) {
-    case 'telemetry:batch':
-      telemetryAgent.ingest(msg.events || []);
-      persistGameplayEvents(msg.events || []);
-      // Broadcast updated telemetry to dashboard clients
+    // -- A/B session lifecycle -----------------------------------
+    case 'session:hello': {
+      // Prefer the URL-query playerId over msg.playerId so a stale
+      // client cannot silently swap identity after WS upgrade.
+      // TODO(auth): playerId is still unauthenticated — sign it upstream.
+      const pid = clients.get(ws)?.playerId || msg.playerId;
+      if (!pid) {
+        ws.send(JSON.stringify({ type: 'session:error', reason: 'playerId required' }));
+        return;
+      }
+      try {
+        const entry = await sessionManager.startSession(ws, pid);
+        ws.send(JSON.stringify({
+          type: 'session:init',
+          sessionId: entry.sessionId,
+          patchId: entry.patchId,
+          patchName: entry.patchDef.name,
+          variant: entry.variant,
+          mapConfig: entry.variant === 'A' ? entry.patchDef.variantA : entry.patchDef.variantB,
+        }));
+        broadcast('dashboard', { type: 'ab:update', snapshot: await abAgent.getSnapshot() });
+      } catch (err) {
+        console.error('[Session] hello failed:', err.message);
+        ws.send(JSON.stringify({ type: 'session:error', reason: err.message }));
+      }
+      return;
+    }
+
+    case 'session:progress':
+      // Optional client hint before disconnect (final stats).
+      sessionManager.updateFinals(ws, msg);
+      return;
+
+    // -- Telemetry ingest ---------------------------------------
+    case 'telemetry:batch': {
+      const events = msg.events || [];
+      // Legacy path: telemetryAgent + dashboard broadcast.
+      telemetryAgent.ingest(events);
       broadcast('dashboard', {
         type: 'telemetry:update',
         snapshot: telemetryAgent.getSnapshot(),
       });
-      break;
+      // New path: DB writes via session-manager (no-op if no session).
+      await sessionManager.ingest(ws, events);
+      return;
+    }
 
     case 'data:batch':
       dataAgent.ingest(msg.events || []);
@@ -102,20 +162,19 @@ function handleMessage(ws, msg, clientType) {
         type: 'data:update',
         snapshot: dataAgent.getSnapshot(),
       });
-      break;
+      return;
 
+    // -- Deprecated (kept as visible no-ops for old clients) ----
     case 'ab:request_assignment':
-      const assignment = abAgent.assignPlayer(msg.playerId, msg.testId);
-      ws.send(JSON.stringify({ type: 'ab:assignment', ...assignment }));
-      break;
+      ws.send(JSON.stringify({
+        type: 'ab:assignment',
+        error: 'deprecated: send { type: "session:hello", playerId } instead',
+      }));
+      return;
 
     case 'ab:record_event':
-      abAgent.recordEvent(msg.testId, msg.variant, msg.event);
-      broadcast('dashboard', {
-        type: 'ab:update',
-        snapshot: abAgent.getSnapshot(),
-      });
-      break;
+      // Silently drop; new pipeline captures via telemetry:batch.
+      return;
   }
 }
 
@@ -130,11 +189,7 @@ function broadcast(clientType, data) {
 
 // ---- REST API ----
 app.get('/api/health', (req, res) => {
-  res.json({
-    status: 'ok', agents: 4, clients: clients.size,
-    hermes: hermesAgent.getSnapshot().status,
-    postgresTelemetry: postgresTelemetryReady ? 'ready' : 'disabled',
-  });
+  res.json({ status: 'ok', agents: 4, clients: clients.size, hermes: hermesAgent.getSnapshot().status });
 });
 
 app.get('/api/telemetry', (req, res) => {
@@ -142,32 +197,50 @@ app.get('/api/telemetry', (req, res) => {
 });
 
 // REST fallback for engines that cannot keep a WebSocket connection open.
-app.post('/api/telemetry/events', async (req, res) => {
+app.post('/api/telemetry/events', (req, res) => {
   const events = Array.isArray(req.body?.events) ? req.body.events : [];
   if (events.length === 0) return res.status(400).json({ error: 'events must be a non-empty array' });
   if (events.length > 1000) return res.status(413).json({ error: 'batch exceeds the 1000 event limit' });
+  telemetryAgent.ingest(events);
+  const snapshot = telemetryAgent.getSnapshot();
+  broadcast('dashboard', { type: 'telemetry:update', snapshot });
+  res.status(202).json({ accepted: events.length, totalEvents: snapshot.totalEvents });
+});
+
+app.get('/api/ab-tests', async (req, res) => {
   try {
-    telemetryAgent.ingest(events);
-    if (postgresTelemetryReady) await insertGameplayEventBatch(events);
-    const snapshot = telemetryAgent.getSnapshot();
-    broadcast('dashboard', { type: 'telemetry:update', snapshot });
-    res.status(202).json({ accepted: events.length, totalEvents: snapshot.totalEvents });
-  } catch (error) {
-    res.status(502).json({ error: 'telemetry persistence failed', detail: error.message });
+    res.json(await abAgent.getSnapshot());
+  } catch (err) {
+    res.status(500).json({ error: err.message });
   }
 });
 
-app.get('/api/telemetry/storage', async (_req, res) => {
-  if (!postgresTelemetryReady) return res.status(503).json({ status: 'disabled' });
+// Full data dump for debugging + demoing.  ?limit=100 to widen the caps.
+app.get('/api/ab-tests/data', async (req, res) => {
   try {
-    res.json({ status: 'ready', ...(await getGameplayEventStats()) });
-  } catch (error) {
-    res.status(502).json({ status: 'error', error: error.message });
+    const limit = Math.min(500, Math.max(1, parseInt(req.query.limit) || 50));
+    res.json(await fetchAllData({ limit }));
+  } catch (err) {
+    res.status(500).json({ error: err.message });
   }
 });
 
-app.get('/api/ab-tests', (req, res) => {
-  res.json(abAgent.getSnapshot());
+// Compact per-variant KPI summary (one row per patch × variant).
+app.get('/api/ab-tests/summary', async (req, res) => {
+  try {
+    res.json(await fetchSummary());
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// Aggregated breakdowns + spatial points for the visual dashboard.
+app.get('/api/ab-tests/breakdowns', async (req, res) => {
+  try {
+    res.json(await fetchBreakdowns());
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
 });
 
 app.get('/api/data-export', (req, res) => {
@@ -181,13 +254,45 @@ app.get('/api/data-export', (req, res) => {
   }
 });
 
-app.get('/api/agents/status', (req, res) => {
-  res.json({
-    telemetry: telemetryAgent.getStatus(),
-    hermes: hermesAgent.getStatus(),
-    abTesting: abAgent.getStatus(),
-    dataCleaning: dataAgent.getStatus(),
-  });
+app.get('/api/agents/status', async (req, res) => {
+  try {
+    res.json({
+      telemetry: telemetryAgent.getStatus(),
+      hermes: hermesAgent.getStatus(),
+      abTesting: await abAgent.getStatus(),
+      dataCleaning: dataAgent.getStatus(),
+    });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// ---- Telemetry agent SOP API ----
+// POST starts the six-phase workflow (ingest → measure → recommend →
+// propose → datasources → deploy); progress is polled via GET or pushed
+// to dashboard clients as sop:update WebSocket messages.
+app.post('/api/agents/telemetry/sop/run', (req, res) => {
+  try {
+    const run = telemetrySOP.start({
+      source: String(req.body?.source || 'sdk'),
+      patchId: req.body?.patchId || null,
+      autoDeploy: req.body?.autoDeploy !== false,
+    });
+    res.status(202).json({ runId: run.id, status: run.status, source: run.source, phases: run.phases.map(p => p.key) });
+  } catch (error) {
+    // start() only throws validation errors synchronously (unknown/empty
+    // data source, no evidence) besides the concurrent-run guard.
+    const status = error.message.includes('already in progress') ? 409 : 400;
+    res.status(status).json({ error: error.message, availableSources: telemetrySOP.getAvailableSources() });
+  }
+});
+
+app.get('/api/agents/telemetry/sop', (req, res) => {
+  res.json(telemetrySOP.getSnapshot());
+});
+
+app.get('/api/data-sources', (req, res) => {
+  res.json(getDataSources(req.query.status || null));
 });
 
 // ---- Hermes patch proposal API ----
@@ -285,35 +390,31 @@ app.get('/api/dashboard/data', (req, res) => {
 // ---- Start ----
 async function start() {
   await initDB();
+  // A/B collection layer uses Postgres in parallel with the SQLite balance store.
+  // Non-fatal on error so the rest of the server still boots.
   try {
     await verifyPostgresConnection();
-    await runMigrations();
-    await upsertGameCatalog('0.1.0', {
-      class: CLASS_STATS,
-      weapon: WEAPONS,
-      skill: SKILLS,
-      enemy: ENEMIES,
-      item: ITEMS,
-    });
-    postgresTelemetryReady = true;
-    console.log('[Postgres] gameplay telemetry and catalog ready');
-  } catch (error) {
-    console.warn(`[Postgres] telemetry disabled: ${describeError(error)}`);
+    await seedPatches();
+  } catch (err) {
+    console.warn(`[DB] Postgres unreachable — A/B collection disabled: ${err.message}`);
   }
-  httpServer.listen(SERVER.PORT, () => {
-    console.log(`[RiftSEED Server] Running on http://localhost:${SERVER.PORT}`);
-    console.log(`[RiftSEED Server] WebSocket on ws://localhost:${SERVER.PORT}/ws`);
+  const PORT = Number(process.env.PORT) || SERVER.PORT;
+  httpServer.listen(PORT, () => {
+    console.log(`[RiftSEED Server] Running on http://localhost:${PORT}`);
+    console.log(`[RiftSEED Server] WebSocket on ws://localhost:${PORT}/ws`);
+    if (HARDCODED_VARIANT) {
+      console.log(`[RiftSEED Server] POOL MODE — hardcoded to variant ${HARDCODED_VARIANT}`);
+    }
     console.log(`[RiftSEED Server] Agents: Telemetry SDK, Hermes Balance, A/B Testing, Data Cleaning`);
-    console.log(`[RiftSEED Server] Database: SQLite balance + Postgres telemetry (${postgresTelemetryReady ? 'ready' : 'disabled'})`);
+    console.log(`[RiftSEED Server] Database: SQLite (game.db) + Postgres (A/B collection)`);
     console.log(`[RiftSEED Server] Classes: ${getClasses().map(c => c.name).join(', ')}`);
   });
 }
 
 // Persist the database on shutdown so patches and match records are not lost.
-async function shutdown() {
+function shutdown() {
   console.log('[RiftSEED Server] Saving database and shutting down…');
   try { saveDB(); } catch (err) { console.error('[RiftSEED Server] Save failed:', err.message); }
-  try { await closePool(); } catch (err) { console.error('[Postgres] close failed:', err.message); }
   process.exit(0);
 }
 process.on('SIGINT', shutdown);

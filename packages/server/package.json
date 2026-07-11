@@ -12,7 +12,8 @@
     "@rift-seed/shared": "workspace:*",
     "cors": "^2.8.5",
     "express": "^4.21.0",
-    "pg": "^8.16.3",
+    "http-proxy": "^1.18.1",
+    "pg": "^8.22.0",
     "sql.js": "^1.14.1",
     "ws": "^8.18.0"
   }

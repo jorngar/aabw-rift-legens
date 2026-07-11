@@ -1,3 +1,7 @@
+// ============================================================
+// Postgres connection pool + graceful-shutdown handlers.
+// Reads DATABASE_URL from env; falls back to docker-compose defaults.
+// ============================================================
 import pg from 'pg';
 
 const DATABASE_URL = process.env.DATABASE_URL
@@ -9,22 +13,35 @@ export const pool = new pg.Pool({
   idleTimeoutMillis: 30_000,
 });
 
-pool.on('error', (error) => {
-  console.error('[Postgres] pool error:', error.message);
+pool.on('error', (err) => {
+  console.error('[DB] pool error:', err.message);
 });
 
+/** Convenience wrapper — same signature as pg.Pool.query. */
 export function query(text, params) {
   return pool.query(text, params);
 }
 
-export async function verifyConnection() {
-  const { rows } = await pool.query('SELECT NOW() AS now');
-  return rows[0].now;
+/** Mask password before logging the connection string. */
+function maskUrl(url) {
+  return url.replace(/:\/\/([^:]+):([^@]+)@/, '://$1:****@');
 }
 
-let closed = false;
-export async function closePool() {
-  if (closed) return;
-  closed = true;
-  await pool.end();
+/** Log a SELECT NOW() round-trip to prove the pool is reachable. */
+export async function verifyConnection() {
+  const { rows } = await pool.query('SELECT NOW() as now');
+  console.log(`[DB] connected to ${maskUrl(DATABASE_URL)} — server time ${rows[0].now.toISOString()}`);
 }
+
+// Close the pool on process exit. We do NOT call process.exit here so the
+// owning app (server.js / migrate.js) keeps control over its shutdown flow.
+let poolClosed = false;
+async function closePool(reason) {
+  if (poolClosed) return;
+  poolClosed = true;
+  console.log(`[DB] closing pool (${reason})`);
+  try { await pool.end(); } catch (err) { console.error('[DB] pool.end failed:', err.message); }
+}
+process.once('SIGTERM', () => closePool('SIGTERM'));
+process.once('SIGINT',  () => closePool('SIGINT'));
+process.once('beforeExit', () => closePool('beforeExit'));

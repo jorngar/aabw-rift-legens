@@ -2,6 +2,7 @@
 node_modules/
 **/node_modules/
 .pnpm-store/
+package-lock.json
 
 # Build and test output
 dist/
@@ -43,6 +44,9 @@ tools/asset-pipeline/terrain/
 tools/asset-pipeline/ui/
 tools/asset-pipeline/vfx/
 
+# Local Data
+packages/server/data/game.json
+
 # Python cache
 __pycache__/
 *.pyc
@@ -54,3 +58,5 @@ __pycache__/
 CLAUDE.md
 .claude
 .context
+.plans/
+/plans/

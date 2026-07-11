@@ -55,8 +55,7 @@ const DIRS = [
   { dx: 0, dy: -1 }, // N
 ];
 
-/** Wall tile type — impassable */
-const WALL = 5;
+import { isBlocked } from '@rift-seed/shared/patch';
 
 /**
  * A* pathfinding.
@@ -71,7 +70,7 @@ export function findPath(grid, start, end) {
 
   // Bounds check
   if (end.x < 0 || end.x >= cols || end.y < 0 || end.y >= rows) return [];
-  if (grid[end.y][end.x] === WALL) return [];
+  if (isBlocked(grid[end.y][end.x])) return [];
 
   const key = (x, y) => `${x},${y}`;
   const heuristic = (a, b) => Math.abs(a.x - b.x) + Math.abs(a.y - b.y);
@@ -110,7 +109,7 @@ export function findPath(grid, start, end) {
       const nk = key(nx, ny);
 
       if (nx < 0 || nx >= cols || ny < 0 || ny >= rows) continue;
-      if (grid[ny][nx] === WALL) continue;
+      if (isBlocked(grid[ny][nx])) continue;
       if (closed.has(nk)) continue;
 
       const tentative = (gScore.get(ck) || Infinity) + 1;

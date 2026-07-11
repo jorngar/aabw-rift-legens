@@ -1,0 +1,122 @@
+{
+  "recommendations": [
+    {
+      "title": "rift_knight damage spike dominates all incoming damage",
+      "severity": "high",
+      "rationale": "rift_knight accounts for 87.1% of all incoming damage (270/310) while shadow_beast contributes only 12.9% (40/310). This single-enemy dominance makes the threat ecosystem one-dimensional. In the 0.13-min sample window, the player received 270 damage from rift_knight against only 105 total dealt, creating a 2.6:1 deficit against the player specifically from this one enemy. The aggregate match data (877 dealt vs 325 taken) contradicts this, suggesting rift_knight encounters are early-encounter death spirals where the player cannot establish tempo.",
+      "evidence": ["riftKnightDamage=270", "riftKnightShare=0.871", "totalDamageReceived=310", "totalDamageDealt=105", "damageDeficitRatio=2.95"],
+      "relatedKeys": ["enemy.rift_knight.damage", "enemy.rift_knight.speed", "enemy.rift_knight.hp"]
+    },
+    {
+      "title": "Zero healing observed despite available heal skill and HP losses",
+      "severity": "high",
+      "rationale": "Players lost 310 HP with hp.gained=0 and mp.spent=0, despite heal being available (skill.heal.amount=40, mana_cost=20) and players having avg 95 MP. Either the heal skill is not surfacing in the UI, players die before they can use it, or there is no tutorial introducing it. The heal amount (40 HP) is only 8% of base HP (500), which may feel too weak to be worth the 5s cooldown investment even if players know about it.",
+      "evidence": ["hpGained=0", "hpLost=310", "mpSpent=0", "mpAverage=95", "healAmount=40", "healShareOfBaseHP=0.08"],
+      "relatedKeys": ["skill.heal.amount", "skill.heal.cooldown", "skill.heal.mana_cost"]
+    },
+    {
+      "title": "Skill engagement is near-zero across all sessions",
+      "severity": "high",
+      "rationale": "Only 1 skill use (shadow_strike) recorded across 2 sessions and 14 events. MP never moved from 95 (min=95, avg=95), meaning the resource system is completely unengaged. Basic attacks accounted for 57.1% of damage dealt (60/105) with shadow_strike at 42.9% (45/105). With killDeathRatio at 0.33, players appear to die before establishing any ability rotation. The 0.13-min observed window is too short to draw firm conclusions, but the pattern suggests encounters end before skill usage matters.",
+      "evidence": ["totalSkillUses=1", "mpSpent=0", "mpAverage=95", "basicAttackShare=0.571", "skillShareOfDamage=0.429", "killDeathRatio=0.33"],
+      "relatedKeys": ["skill.shadow_strike.damage", "skill.shadow_strike.cooldown", "skill.rift_slash.damage"]
+    },
+    {
+      "title": "Player dies 3x faster than they kill in early encounters",
+      "severity": "high",
+      "rationale": "Detailed telemetry shows 3 player deaths vs 1 kill (K/D 0.33) with deathsPerMinute of 22.63. While the 0.13-min sample inflates per-minute rates, the raw ratio is unambiguous. Players lost 440 HP worth of their 500 HP pool (88% depletion) in under 8 seconds of observed play. Aggregate match stats showing avg_deaths=0 suggest this is specifically an early-encounter problem, not a mid-game one.",
+      "evidence": ["kills=1", "playerDeaths=3", "killDeathRatio=0.33", "deathsPerMinute=22.63", "hpLost=310", "baseHP=500", "hpDepletionRatio=0.62"],
+      "relatedKeys": ["player.base_hp", "enemy.rift_knight.damage", "skill.heal.amount"]
+    },
+    {
+      "title": "Movement telemetry gap prevents spatial gameplay analysis",
+      "severity": "medium",
+      "rationale": "distanceTiles=0 and movementSamples=0 across both sessions means dodge/kite mechanics cannot be evaluated. For an isometric action RPG, spatial movement is core to survivability. This could be a tracking bug, players being stunlocked, or encounters being too short to move. Cannot recommend spatial balance changes without this data.",
+      "evidence": ["distanceTiles=0", "movementSamples=0", "tilesPerMinute=0"],
+      "relatedKeys": ["enemy.rift_knight.speed", "enemy.shadow_beast.speed"]
+    },
+    {
+      "title": "shadow_beast is a non-threat contributing only 12.9% of damage",
+      "severity": "low",
+      "rationale": "shadow_beast dealt only 40 of 310 incoming damage (12.9%). With a base damage of 3 in allowed_changes, it takes ~90 hits from shadow_beast to match rift_knight's output in this sample. shadow_beast should serve as a meaningful secondary threat or fodder enemy; at current tuning it is effectively invisible in the damage economy. Low severity because the rift_knight problem is far more urgent and fixing that may naturally recontextualize shadow_beast's role.",
+      "evidence": ["shadowBeastDamage=40", "shadowBeastShare=0.129", "shadowBeastBaseDamage=3", "riftKnightBaseDamage=7", "damageRatioToRiftKnight=0.148"],
+      "relatedKeys": ["enemy.shadow_beast.damage", "enemy.shadow_beast.speed"]
+    }
+  ],
+  "patch": {
+    "summary": "Conservative survivability pass: increase player HP buffer by 15%, nerf rift_knight damage by ~29%, and buff heal skill to make recovery mechanics viable. Confidence is very low (0.18) due to 14-event sample, so changes are kept near the 15% preference with one justified exception on rift_knight damage.",
+    "rationale": "The core problem is a 3:1 damage deficit in early encounters driven by rift_knight (87% of incoming damage). Players have no healing observed (hp.gained=0) despite a heal skill existing. The patch (1) gives players 15% more HP to survive initial rift_knight burst, (2) reduces rift_knight per-hit damage by 29% (justified by 87% damage share dominance, near the 30% cap), and (3) increases heal amount and reduces heal cooldown by 15% each to make healing a viable tactical option. All changes are within the 30% cap. No changes to shadow_beast, movement, or resource costs since those signals are weak or absent.",
+    "expectedImpact": "Early encounter survivability should improve meaningfully. The combined effect of +75 base HP and ~29% less rift_knight damage should extend encounter duration from <8s to ~12-15s, giving players time to discover and use abilities. Heal buff encourages MP spending and introduces recovery mechanics. Expected to move killDeathRatio from 0.33 toward 0.6+ in early encounters.",
+    "confidence": 0.18,
+    "changes": [
+      {
+        "key": "player.base_hp",
+        "proposedValue": 575,
+        "reason": "Players lost 310 of 500 HP (62%) in <8 seconds of observed play. +15% HP provides a buffer against rift_knight burst without trivializing encounters. 575 HP means the observed damage scenario leaves players at 265 HP instead of 190, buying time for heal usage.",
+        "evidence": ["hpLost=310", "baseHP=500", "hpMinimum=60", "hpDepletionRatio=0.62"]
+      },
+      {
+        "key": "enemy.rift_knight.damage",
+        "proposedValue": 5,
+        "reason": "rift_knight deals 87% of all incoming damage (270/310). Reducing base damage from 7 to 5 (-28.6%) is within the 30% cap and is justified by the extreme damage concentration. At 5 damage per hit, rift_knight's contribution to the sample would be ~193 instead of 270, reducing the early-encounter damage deficit from 2.95:1 to ~2.1:1. This is the single highest-impact change for the dominant balance issue.",
+        "evidence": ["riftKnightDamage=270", "riftKnightShare=0.871", "riftKnightBaseDamage=7", "damageDeficitRatio=2.95"]
+      },
+      {
+        "key": "skill.heal.amount",
+        "proposedValue": 46,
+        "reason": "Heal amount of 40 HP is only 8% of base HP (500), making it feel negligible. At 46 HP with new base HP of 575, it becomes 8% still but the absolute number is more visible. The +15% buff (40 to 46) is modest and within preference. Combined with HP increase, heal recovers a meaningful chunk of the rift_knight damage reduction window.",
+        "evidence": ["hpGained=0", "healAmount=40", "healShareOfBaseHP=0.08", "mpSpent=0"]
+      },
+      {
+        "key": "skill.heal.cooldown",
+        "proposedValue": 4250,
+        "reason": "At 5000ms cooldown, heal can only be used once per ~5-second window. Reducing to 4250ms (-15%) allows slightly more frequent recovery, encouraging players to engage with the heal mechanic. The 15% change is conservative given low confidence, but zero heal usage suggests the skill needs to be more accessible.",
+        "evidence": ["hpGained=0", "healCooldown=5000", "avgMatchDuration=90.75s"]
+      }
+    ]
+  },
+  "expectedKPIs": [
+    {
+      "kpi": "killDeathRatio",
+      "current": 0.33,
+      "target": 0.65,
+      "direction": "increase",
+      "rationale": "With +15% player HP and -29% rift_knight damage, early encounters should last long enough for players to deal meaningful damage before dying. The combined effective HP increase (575 base + less incoming damage per second) should roughly double encounter duration, moving K/D from 0.33 toward 0.65. Aggregate match K/D is likely higher already (877 dealt vs 325 taken implies ~2.7:1), so this targets the early-encounter gap specifically."
+    },
+    {
+      "kpi": "deathsPerMinute",
+      "current": 22.63,
+      "target": 8.0,
+      "direction": "decrease",
+      "rationale": "The 22.63 deaths/min is inflated by the 0.13-min sample but reflects 3 deaths in ~8 seconds. With rift_knight damage reduced and player HP increased, early deaths should be delayed. Target of 8.0 deaths/min represents roughly a 65% reduction, achievable if encounter duration extends from ~3s per life to ~7-8s per life. Confidence is low due to sample inflation."
+    },
+    {
+      "kpi": "hpGained (heal usage)",
+      "current": 0,
+      "target": 46,
+      "direction": "increase",
+      "rationale": "Zero healing was observed despite heal being available. Target of 46 HP gained (one heal use per early encounter) represents the minimum success metric for the heal buff. If players use heal even once after these changes, hpGained should show >0. A realistic optimistic target is 92+ (two uses per match), but one use is the minimum bar."
+    },
+    {
+      "kpi": "skillShareOfDamage",
+      "current": 0.429,
+      "target": 0.55,
+      "direction": "increase",
+      "rationale": "Currently skills account for 42.9% of damage dealt (45/105) with only 1 skill use. If encounter duration increases, players will have time for 2-3 skill rotations instead of 1, pushing skill share above basic attacks. Target 55% represents players using 2+ abilities per encounter instead of 0-1. This also validates that extended encounters lead to more tactical engagement."
+    },
+    {
+      "kpi": "riftKnightShare (damage concentration)",
+      "current": 0.871,
+      "target": 0.60,
+      "direction": "decrease",
+      "rationale": "rift_knight currently accounts for 87.1% of incoming damage. With its per-hit damage reduced by 29%, its absolute contribution drops while shadow_beast's remains flat. The share should naturally decrease toward 60-65% as rift_knight damage normalizes. If it stays above 80%, further rift_knight nerfs or shadow_beast buffs may be needed."
+    },
+    {
+      "kpi": "sessionDuration (early encounter)",
+      "current": 7.8,
+      "target": 14.0,
+      "direction": "increase",
+      "rationale": "Observed session was 0.13 minutes (~7.8 seconds) with 3 deaths, meaning ~2.6 seconds per life. With the HP and damage changes, effective player durability increases by roughly 50% (15% more HP + 29% less dominant damage source), suggesting encounter duration should extend to ~14 seconds minimum. Aggregate match duration of 90.75s should also increase if early encounters stop being instant wipes."
+    }
+  ]
+}

@@ -4,6 +4,7 @@ services:
     container_name: rift-seed-postgres
     restart: unless-stopped
     environment:
+      # Dev-only credentials — do not use in production
       POSTGRES_USER: rift
       POSTGRES_PASSWORD: rift_dev_only
       POSTGRES_DB: rift_seed
