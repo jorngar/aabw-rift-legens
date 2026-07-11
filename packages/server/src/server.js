@@ -5,8 +5,6 @@ import express from 'express';
 import cors from 'cors';
 import { createServer } from 'http';
 import { WebSocketServer, WebSocket } from 'ws';
-import { fileURLToPath } from 'node:url';
-import { dirname, join } from 'node:path';
 import { SERVER } from '@rift-seed/shared/config';
 import { TelemetryAgent } from './agents/telemetry-agent.js';
 import { ABTestingAgent } from './agents/ab-testing-agent.js';
@@ -23,13 +21,6 @@ import { fetchAllData, fetchSummary } from './ab-data-viewer.js';
 const app = express();
 app.use(cors());
 app.use(express.json());
-
-// Serve static assets (A/B dashboard, etc) from ../public
-const __dirname = dirname(fileURLToPath(import.meta.url));
-app.use('/static', express.static(join(__dirname, '..', 'public')));
-app.get('/ab-dashboard', (req, res) => {
-  res.sendFile(join(__dirname, '..', 'public', 'ab-dashboard.html'));
-});
 
 const httpServer = createServer(app);
 const wss = new WebSocketServer({ server: httpServer, path: '/ws' });

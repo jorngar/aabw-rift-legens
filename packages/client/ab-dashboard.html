@@ -125,7 +125,8 @@
   </div>
 
   <div class="footer">
-    Raw JSON: <a href="/api/ab-tests/data" target="_blank">/api/ab-tests/data</a> ·
+    Raw JSON:
+    <a href="/api/ab-tests/data" target="_blank">/api/ab-tests/data</a> ·
     <a href="/api/ab-tests/summary" target="_blank">/api/ab-tests/summary</a> ·
     <a href="/api/ab-tests" target="_blank">/api/ab-tests</a> ·
     <a href="/api/health" target="_blank">/api/health</a>
@@ -133,6 +134,10 @@
 
   <script>
     const REFRESH_MS = 3000;
+    // Vite's dev server proxies /api and /ws to the Express backend
+    // on :3001 (see packages/client/vite.config.js), so we can just
+    // use relative URLs. Same page works in a prod build behind Nginx too.
+    const API = '';
 
     function fmt(n)       { return n == null ? '—' : Number(n).toLocaleString(); }
     function fmtMs(n)     { if (n == null) return '—'; if (n < 1000) return n + 'ms'; return (n / 1000).toFixed(1) + 's'; }
@@ -225,8 +230,8 @@
     async function refresh() {
       try {
         const [summary, data] = await Promise.all([
-          fetch('/api/ab-tests/summary').then(r => r.json()),
-          fetch('/api/ab-tests/data?limit=1').then(r => r.json()),
+          fetch(API + '/api/ab-tests/summary').then(r => r.json()),
+          fetch(API + '/api/ab-tests/data?limit=1').then(r => r.json()),
         ]);
 
         if (!summary || summary.length === 0) {
