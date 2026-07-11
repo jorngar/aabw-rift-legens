@@ -15,6 +15,7 @@ import { getRuntimeConfig } from './runtime-config.js';
 import { verifyConnection as verifyPostgresConnection } from './db/pool.js';
 import { seedPatches } from './patch-seeder.js';
 import { SessionManager } from './session-manager.js';
+import { compressSession } from './path-compressor.js';
 
 const app = express();
 app.use(cors());
@@ -28,11 +29,13 @@ const telemetryAgent = new TelemetryAgent();
 const abAgent = new ABTestingAgent();
 const dataAgent = new DataCleaningAgent();
 const hermesAgent = new HermesBalanceAgent({ telemetryAgent });
-// A/B collection session lifecycle (Postgres). onSessionEnded is where
-// Phase 6's path compressor will subscribe.
+// A/B collection session lifecycle (Postgres). Path compression runs
+// asynchronously after a session ends — never blocks the WS handler.
 const sessionManager = new SessionManager({
   onSessionEnded: (sessionId) => {
-    // TODO(phase-6): compressSession(sessionId) here
+    compressSession(sessionId).catch(err => {
+      console.error('[Compressor] onSessionEnded chain failed:', err.message);
+    });
   },
 });
 
