@@ -4,7 +4,7 @@
 import * as PIXI from 'pixi.js';
 import { loadRiftAssets } from './infrastructure/assets/rift-asset-loader.js';
 import { Camera, tileToScreen, tileDistance } from './game/core/isometric.js';
-import { renderTileMap, generateGardenMap } from './game/core/tilemap.js';
+import { renderTileMap, generateGardenMap, TILE_TYPES } from './game/core/tilemap.js';
 import { World, createEntity } from './game/core/ecs.js';
 import { meleeAttack, combatTick, useSkill } from './game/core/combat.js';
 import { movementSystem, spriteSyncSystem, enemyAISystem, depthSortSystem, playerCombatSystem } from './game/systems/game-systems.js';
@@ -549,15 +549,29 @@ async function initGame(classId = 'warrior') {
       }
     }
 
-    // WASD movement
+    // WASD movement — bounds from live grid + wall collision
     const { dx, dy } = getMovementInput();
     playerEntity.manualMovement = dx !== 0 || dy !== 0;
     if (dx !== 0 || dy !== 0) {
       const speed = (playerEntity.stats.speed || 3) * 0.05;
-      playerEntity.pos.x += dx * speed;
-      playerEntity.pos.y += dy * speed;
-      playerEntity.pos.x = Math.max(1, Math.min(14, playerEntity.pos.x));
-      playerEntity.pos.y = Math.max(1, Math.min(14, playerEntity.pos.y));
+      const cols = world.grid[0]?.length || 20;
+      const rows = world.grid.length || 20;
+      // Player center stays half a tile inside the perimeter wall so the
+      // sprite never overlaps the map edge.
+      const nx = Math.max(0.5, Math.min(cols - 1.5, playerEntity.pos.x + dx * speed));
+      const ny = Math.max(0.5, Math.min(rows - 1.5, playerEntity.pos.y + dy * speed));
+      // Wall collision: check the tile under the proposed feet position
+      // independently for X and Y so the player can slide along a wall.
+      const tileYSameX = Math.round(playerEntity.pos.y);
+      const tileXNew   = Math.round(nx);
+      if (world.grid[tileYSameX]?.[tileXNew] !== TILE_TYPES.WALL) {
+        playerEntity.pos.x = nx;
+      }
+      const tileXSameY = Math.round(playerEntity.pos.x);
+      const tileYNew   = Math.round(ny);
+      if (world.grid[tileYNew]?.[tileXSameY] !== TILE_TYPES.WALL) {
+        playerEntity.pos.y = ny;
+      }
       playerEntity.isMoving = true;
       playerEntity.targetPos = null;
       playerEntity.path = null;
