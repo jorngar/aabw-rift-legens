@@ -1,5 +1,24 @@
 Original prompt: okay now we need to focus on fixing the game for the demo, we have a base but the graphical assets are a mess, the animation loop plays even when the characters are stationery, the attack animations are not there, let's focus on make the game play and the visuals as best as we can, maybe search for more assets if needed , also add a .gitignore for some reason it got remote
 
+## Session 2026-07-11 (later) — Telemetry agent SOP + /telemetry-agent skill
+
+- New `packages/server/src/agents/telemetry-sop.js`: six-phase SOP runner (ingest → measure experience → recommend → propose patch + KPIs → propose data sources → deploy). Phases 2–5 reason on the local Hermes CLI (with one JSON-retry per call); patches go through the existing ±30% safety validation and appear in the normal patch tab.
+- API: `POST /api/agents/telemetry/sop/run` ({source, autoDeploy}), `GET /api/agents/telemetry/sop`, `GET /api/data-sources`. Progress is broadcast to dashboard WS clients as `sop:update`.
+- Persistence: new `sop_runs` (full run audit trail) and `data_sources` tables; deployed data sources are published to the game SDK via `/api/runtime-config` → `telemetry.additionalDataSources`.
+- Dashboard `http://localhost:3001/dashboard/` gained a third tab **🧠 Agent SOP**: run button, live phase stepper, experience scorecard chart, evidence-backed recommendations, patch proposal + expected-KPI table, proposed data sources, deployment log.
+- New skill `.claude/skills/telemetry-agent/SKILL.md` — the argument names the **data source to ingest from**: `sdk` (live SDK telemetry), `matches` (match_history table), or `all`; free-form phrases resolve fuzzily ("/telemetry-agent match history db"). Add "no-deploy" to stop before deployment. Unknown sources get a 400 listing `availableSources`; the dashboard SOP tab has a source dropdown with live readiness (event/row counts). Note: newly added skills are discovered on the next Claude Code session start.
+- Verified the `matches` source live (run `sop_df1286a9`, 153s, no-deploy): evidence built from 7 match rows, proposal left in `proposed` state for manual deploy from the patch tab.
+- Verified live end-to-end (run `sop_18b87d49`, 101s): scored experience 34/100, 5 recommendations, 4-change patch deployed, 3 data sources (healing_events, death_context, session_lifecycle) published; everything survives server restart. 31 unit tests pass (4 new SOP tests).
+- Heads-up: verification runs applied real balance changes (rift_knight.damage → 6, player.base_hp → 550, shadow_strike cooldown → 2125 / mana → 12). Reset by deleting `packages/server/data/game.json` with the server stopped.
+
+## Session 2026-07-11 (later still) — New 96x96 sprite pack mapped
+
+- The `SpriteSheets(96x96)` pack is the same art family/geometry as the old `free-characters` extracts (identical frame bounds), so existing scales/anchors carry over; `With_Shadows` variants match the old baked shadows.
+- Class mapping (each class now has its own full rig — idle/walk/attack1+2/block/jump/hurt/death): warrior → Human_Soldier_Sword_Shield, mage → Human_Mage, rogue → Human_Soldier_Polearm, ranger → Human_Bow (attack3/arrowShot reuses Bow Attack2). Monster mapping: shadowBeast "Rift Slime" → Monster_Slime, riftKnight → Monster_Orc_Axe.
+- Loader (`rift-asset-loader.js`) now generates strip entries from a PACK_SETS table; all 10 sets load, and ready-made profiles exist for the unused ones (GOBLIN_ANIMATION_PROFILE, ORC_SHIELD, ORC_FIST, MACE_SOLDIER) so new encounters can be reskinned without asset work.
+- Existing sheet keys (`soldier*`, `ranger*`, `orc*`, `packSlime*`) kept, so enemy spawn code was untouched. Verified all 4 classes in-browser (zero console errors, attack/skill animations play). 31 tests pass; the class-rig test now asserts per-class sheets.
+- The old `free-characters/` folder and `flare/magician.png` (merchant NPC) remain in use only for the merchant; free-characters files are now unreferenced and can be deleted if size matters.
+
 ## Current focus
 
 - Audit sprite sheets and atlas frame ranges.
@@ -73,3 +92,24 @@ Original prompt: okay now we need to focus on fixing the game for the demo, we h
 - Browser verification passed with no console errors: intro asset HTTP responses succeeded, Enter opened class selection, combat rendered, movement returned to `animation="idle"`, and the relocated server dashboard returned HTTP 200.
 - Final browser artifacts: `output/architecture-refactor-intro.png`, `output/architecture-refactor-gameplay/`, `output/architecture-refactor-idle/`, and `output/architecture-refactor-dashboard.png`.
 - No commit or push was performed. Before committing, the existing tracked `packages/server/data/game.json` should still be removed from the Git index while kept locally by `.gitignore`.
+
+## Session 2026-07-11 — Complete modern player rig
+
+- Audited the Free Characters sheet layout: the eight rows are distinct animation categories, not eight movement directions. The source provides one side-facing rig with idle, walk, jump/fall, block, two attacks, hurt, and death.
+- Mapped the genuine extra strips for both soldier and slime into the runtime loader: Attack 2, Block, and Jump/Fall are now shipped alongside the existing states.
+- All four selectable classes now use the complete soldier rig, eliminating the old chibi character during gameplay. Class identity is retained through persistent class tint, stats, and skill loadout until equivalent class-specific rigs are available.
+- Basic attacks use Attack 1; offensive skills use Attack 2; movement skills use Jump/Fall; defensive/self skills use Block. Rift Slimes alternate Attack 1 and Attack 2.
+- Completed direction handling supported by the art: automatic paths already mirrored east/west; manual WASD and target-facing now update the same eight-way logical direction, with horizontal mirroring for the side-facing source frames.
+- Added regression coverage for every class profile, alternate action lock release, horizontal facing, and tint restoration. Client suite now has 12 passing tests and the production build passes.
+- Dependency links unexpectedly disappeared during verification; `pnpm install` restored the lockfile-defined workspace packages without changing dependency versions.
+- Removed the retired chibi PNG/atlas copies from the Vite public allowlist; the editable originals remain in the asset pipeline. Runtime assets dropped from 8.6 MB to 6.5 MB.
+- Mandatory browser movement pass verified manual direction `E`, right-facing mirroring, and stationary idle recovery with telemetry online and no console errors.
+- Four-class browser matrix verified Warrior=`block`, Mage=`jump`, Rogue=`jump`, Ranger=`attack2`; every state released back to idle, class tints were restored, and west/east input mapped to left/right facing.
+- Combat polling observed Rift Slimes in all relevant live states, including both `attack` and `attack2`, and captured `output/slime-attack-2.png` with no console errors.
+- Connected the remaining mapped states to gameplay: Rift Slimes play Jump/Fall once when aggro starts and Block when stunned; player death now holds the full death strip for 820ms instead of being erased by an immediate HP reset.
+- Final mandatory combat pass captured a west-facing player attack against a Slime in `jump`, followed by east-facing idle recovery. Art, reported state, and facing were consistent with no browser errors.
+- A new `ArcherAndOrcAssets` source pack appeared during the final build. Moved its editor/source tree out of Vite public assets into `tools/asset-pipeline`, then promoted only the with-shadow runtime strips.
+- Ranger now has a distinct 100x100 rig with idle, walk, three attacks, hurt, and death; Arrow Shot uses Attack 3. Rift Knights now use the matching Orc idle/walk/two-attack/hurt/death rig, removing the final legacy heavy-character runtime asset.
+- The Archer/Orc source did not include a license file. Runtime license notes explicitly flag that its redistribution terms must be verified before publishing outside the hackathon.
+- The required post-integration browser launch was rejected because the environment hit its approval/usage limit. Do not bypass it; rerun the Ranger/Orc browser scenario when browser approval is available.
+- Final safe verification after Ranger/Orc integration: 14 client tests + 9 server tests pass, production build succeeds, all promoted runtime strips are present/non-empty, retired chibi/heavy assets are absent from `dist`, and `git diff --check` passes.

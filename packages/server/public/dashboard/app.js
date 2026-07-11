@@ -6,12 +6,15 @@ const API = {
   apply: id => `/api/patches/${id}/apply`,
   data: '/api/dashboard/data',
   telemetry: '/api/telemetry',
+  sop: '/api/agents/telemetry/sop',
+  sopRun: '/api/agents/telemetry/sop/run',
 };
 
 const state = {
   hermes: null,
   data: null,
   telemetry: null,
+  sop: null,
 };
 
 const $ = sel => document.querySelector(sel);
@@ -31,6 +34,7 @@ document.querySelectorAll('.tab').forEach(btn => {
     btn.classList.add('active');
     $('#tab-' + btn.dataset.tab).classList.add('active');
     if (btn.dataset.tab === 'analytics') renderAnalytics();
+    if (btn.dataset.tab === 'sop') refreshSOP();
   });
 });
 
@@ -344,8 +348,215 @@ async function refreshAll() {
   if ($('#tab-analytics').classList.contains('active')) renderAnalytics();
 }
 
+// ---------- Telemetry Agent SOP tab ----------
+let sopPollTimer = null;
+
+async function refreshSOP() {
+  try {
+    state.sop = await fetch(API.sop).then(r => r.json());
+  } catch {
+    state.sop = null;
+  }
+  renderSOP();
+  const run = activeSOPRun();
+  if (run?.status === 'running' && !sopPollTimer) {
+    sopPollTimer = setInterval(refreshSOP, 3000);
+  } else if (run?.status !== 'running' && sopPollTimer) {
+    clearInterval(sopPollTimer);
+    sopPollTimer = null;
+  }
+}
+
+function activeSOPRun() {
+  const s = state.sop;
+  if (!s) return null;
+  return s.currentRun || s.history?.[0] || s.persistedRuns?.[0] || null;
+}
+
+async function runSOP() {
+  const btn = $('#btn-sop-run');
+  btn.disabled = true;
+  try {
+    const res = await fetch(API.sopRun, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ source: $('#sop-source').value || 'sdk', autoDeploy: $('#sop-autodeploy').checked }),
+    });
+    if (!res.ok) throw new Error((await res.json()).error || 'SOP start failed');
+    await refreshSOP();
+  } catch (e) {
+    alert('SOP failed to start: ' + e.message);
+  } finally {
+    btn.disabled = false;
+  }
+}
+
+function phaseOutput(run, key) {
+  return run?.phases?.find(p => p.key === key && p.status === 'done')?.output || null;
+}
+
+function renderSOPSources() {
+  const sel = $('#sop-source');
+  const sources = state.sop?.availableSources || [];
+  if (!sources.length) return;
+  const previous = sel.value;
+  sel.innerHTML = '';
+  sources.forEach(s => {
+    const opt = document.createElement('option');
+    opt.value = s.id;
+    opt.textContent = `${s.id} — ${s.detail}`;
+    opt.title = s.description;
+    opt.disabled = !s.ready;
+    sel.appendChild(opt);
+  });
+  const canKeep = previous && [...sel.options].some(o => o.value === previous && !o.disabled);
+  if (canKeep) sel.value = previous;
+  else {
+    const firstReady = [...sel.options].find(o => !o.disabled);
+    if (firstReady) sel.value = firstReady.value;
+  }
+}
+
+function renderSOP() {
+  renderSOPSources();
+  const run = activeSOPRun();
+  const status = $('#sop-status');
+  const stepper = $('#sop-phases');
+  stepper.innerHTML = '';
+
+  if (!run) {
+    status.innerHTML = '<div class="empty">No SOP runs yet. Click <b>Run SOP</b> to execute the full workflow on current telemetry.</div>';
+    return;
+  }
+
+  const elapsed = Math.round(((run.finishedAt || Date.now()) - run.startedAt) / 1000);
+  const statusCls = run.status === 'completed' ? 'good' : run.status === 'failed' ? 'bad' : 'warn';
+  status.innerHTML = `
+    <span class="sop-run-id">${esc(run.id)}</span>
+    <span class="sop-run-status ${statusCls}">${esc(run.status)}</span>
+    <span class="muted">source: ${esc(run.source)}${run.sourceLabel && run.sourceLabel !== run.source ? ` (“${esc(run.sourceLabel)}”)` : ''} · patch ${esc(run.patchId || '—')} · ${elapsed}s${run.autoDeploy === false ? ' · deploy: manual' : ''}</span>
+    ${run.error ? `<div class="sop-error">${esc(run.error)}</div>` : ''}`;
+
+  run.phases.forEach((p, i) => {
+    const icon = p.status === 'done' ? '✓' : p.status === 'running' ? '◐' : p.status === 'failed' ? '✗' : '○';
+    const row = el('div', `sop-phase ${p.status}`);
+    row.innerHTML = `
+      <span class="idx">${i + 1}</span>
+      <span class="icon">${icon}</span>
+      <span class="title">${esc(p.title)}</span>
+      <span class="muted">${p.durationMs != null ? (p.durationMs / 1000).toFixed(1) + 's' : p.status === 'running' ? 'running…' : ''}</span>
+      ${p.error ? `<span class="sop-error">${esc(p.error)}</span>` : ''}`;
+    stepper.appendChild(row);
+  });
+
+  renderSOPExperience(phaseOutput(run, 'measure'));
+  renderSOPRecommendations(phaseOutput(run, 'recommend'));
+  renderSOPProposal(phaseOutput(run, 'propose'));
+  renderSOPDataSources(phaseOutput(run, 'datasources'));
+  renderSOPDeploy(phaseOutput(run, 'deploy'));
+}
+
+function renderSOPExperience(exp) {
+  $('#sop-experience-wrap').style.display = exp ? '' : 'none';
+  if (!exp) return;
+  barChart($('#sop-experience'), [{ name: 'OVERALL', score: exp.overallScore }, ...(exp.dimensions || [])], {
+    valueFn: d => d.score,
+    labelFn: d => d.name,
+    colorFn: (d, v) => v >= 70 ? 'var(--good)' : v >= 40 ? 'var(--warn)' : 'var(--bad)',
+    max: 100,
+  });
+  const detail = $('#sop-experience-detail');
+  detail.innerHTML = '';
+  detail.appendChild(el('div', 'rec sev-info', `<span class="sev info">summary</span><div class="body">${esc(exp.summary)} <span class="muted">(confidence ${Math.round(exp.confidence * 100)}%)</span></div>`));
+  (exp.dimensions || []).forEach(d => {
+    const ev = (d.evidence || []).map(e => `<span class="ev-tag">${esc(e)}</span>`).join('');
+    const sev = d.score >= 70 ? 'info' : d.score >= 40 ? 'medium' : 'high';
+    detail.appendChild(el('div', `rec sev-${sev}`, `<span class="sev ${sev}">${d.score}</span><div class="body"><b>${esc(d.name)}</b> — ${esc(d.reasoning)}<div class="evidence">${ev}</div></div>`));
+  });
+}
+
+function renderSOPRecommendations(out) {
+  $('#sop-recs-wrap').style.display = out ? '' : 'none';
+  if (!out) return;
+  const wrap = $('#sop-recommendations');
+  wrap.innerHTML = '';
+  (out.recommendations || []).forEach(r => {
+    const ev = (r.evidence || []).map(e => `<span class="ev-tag">${esc(e)}</span>`).join('');
+    const keys = (r.relatedKeys || []).map(k => `<span class="metric">${esc(k)}</span>`).join(' ');
+    wrap.appendChild(el('div', `rec sev-${esc(r.severity)}`,
+      `<span class="sev ${esc(r.severity)}">${esc(r.severity)}</span><div class="body"><b>${esc(r.title)}</b> — ${esc(r.rationale)}<div class="evidence">${ev}</div>${keys ? `<div style="margin-top:4px">${keys}</div>` : ''}</div>`));
+  });
+  if (!wrap.children.length) wrap.appendChild(el('div', 'empty', 'No recommendations produced.'));
+}
+
+function renderSOPProposal(out) {
+  $('#sop-proposal-wrap').style.display = out ? '' : 'none';
+  if (!out) return;
+  const list = $('#sop-proposal');
+  list.innerHTML = '';
+  // Reuse the patch tab card renderer; the live status comes from the hermes
+  // snapshot when available (the SOP may have deployed it since).
+  const live = (state.hermes?.proposals || []).find(p => p.id === out.proposal.id);
+  list.appendChild(patchCard(live || out.proposal));
+
+  const kpis = $('#sop-kpis');
+  kpis.innerHTML = '';
+  (out.expectedKPIs || []).forEach(k => {
+    const arrow = k.direction === 'decrease' ? '▼' : '▲';
+    const row = el('div', 'item-row');
+    row.innerHTML = `
+      <div><div class="name">${esc(k.kpi)}</div><div class="tag">${esc(k.rationale)}</div></div>
+      <div class="who">${fmt(k.current)} ${arrow} ${fmt(k.target)}</div>
+      <div class="who">${esc(k.direction)}</div>
+      <div></div>`;
+    kpis.appendChild(row);
+  });
+  if (!kpis.children.length) kpis.appendChild(el('div', 'empty', 'No KPI targets produced.'));
+}
+
+function renderSOPDataSources(out) {
+  $('#sop-sources-wrap').style.display = out ? '' : 'none';
+  if (!out) return;
+  const wrap = $('#sop-datasources');
+  wrap.innerHTML = '';
+  (out.dataSources || []).forEach(s => {
+    const fields = s.exampleEvent?.fields?.length ? `<div class="evidence">${s.exampleEvent.fields.map(f => `<span class="ev-tag">${esc(f)}</span>`).join('')}</div>` : '';
+    wrap.appendChild(el('div', 'rec sev-info',
+      `<span class="sev info">${esc(s.id)}</span><div class="body"><b>${esc(s.name)}</b> — ${esc(s.description)}<div class="muted" style="margin-top:4px">Why: ${esc(s.rationale)} · KPI: ${esc(s.kpiSupported)}</div>${fields}</div>`));
+  });
+  if (!wrap.children.length) wrap.appendChild(el('div', 'empty', 'No new data sources proposed.'));
+}
+
+function renderSOPDeploy(out) {
+  $('#sop-deploy-wrap').style.display = out ? '' : 'none';
+  if (!out) return;
+  const wrap = $('#sop-deploy');
+  wrap.innerHTML = '';
+  if (out.skipped) {
+    wrap.appendChild(el('div', 'empty', esc(out.note)));
+    return;
+  }
+  (out.appliedChanges || []).forEach(c => {
+    const row = el('div', 'adj-row');
+    row.innerHTML = `
+      <div><div class="key">${esc(c.key)}</div><div class="who hermes">telemetry-sop</div></div>
+      <div class="adj-val"><span class="old">${fmt(c.from)}</span> → <span class="new">${fmt(c.to)}</span></div>
+      <div class="who">${c.percentChange != null ? (c.percentChange > 0 ? '+' : '') + c.percentChange + '%' : ''}</div>`;
+    wrap.appendChild(row);
+  });
+  const srcRow = el('div', 'adj-row');
+  srcRow.innerHTML = `
+    <div><div class="key">new data inputs deployed</div><div class="who">runtime-config</div></div>
+    <div class="adj-val"><span class="new">${(out.deployedDataSources || []).map(esc).join(', ') || 'none'}</span></div>
+    <div class="who"></div>`;
+  wrap.appendChild(srcRow);
+}
+
 $('#btn-analyze').addEventListener('click', generatePatch);
 $('#btn-refresh').addEventListener('click', refreshAll);
 $('#btn-refresh-2').addEventListener('click', refreshAll);
+$('#btn-sop-run').addEventListener('click', runSOP);
+$('#btn-sop-refresh').addEventListener('click', refreshSOP);
 
 refreshAll();
+refreshSOP();

@@ -12,6 +12,8 @@ import { TelemetryAgent } from './agents/telemetry-agent.js';
 import { ABTestingAgent } from './agents/ab-testing-agent.js';
 import { DataCleaningAgent } from './agents/data-cleaning-agent.js';
 import { HermesBalanceAgent } from './agents/hermes-balance-agent.js';
+import { TelemetrySOP } from './agents/telemetry-sop.js';
+import { getDataSources } from './database.js';
 import { getBalance, setBalance, getAllBalance, getMatchHistory, getAdjustments, getClasses, getClass, getAggregateStats, getDashboardData, saveDB, recordMatch, initDB } from './database.js';
 import { getRuntimeConfig } from './runtime-config.js';
 
@@ -34,6 +36,11 @@ const telemetryAgent = new TelemetryAgent();
 const abAgent = new ABTestingAgent();
 const dataAgent = new DataCleaningAgent();
 const hermesAgent = new HermesBalanceAgent({ telemetryAgent });
+const telemetrySOP = new TelemetrySOP({
+  telemetryAgent,
+  hermesAgent,
+  onUpdate: run => broadcast('dashboard', { type: 'sop:update', run }),
+});
 
 // ---- WebSocket Routing ----
 const clients = new Map(); // ws -> { type, id }
@@ -149,6 +156,34 @@ app.get('/api/agents/status', (req, res) => {
     abTesting: abAgent.getStatus(),
     dataCleaning: dataAgent.getStatus(),
   });
+});
+
+// ---- Telemetry agent SOP API ----
+// POST starts the six-phase workflow (ingest → measure → recommend →
+// propose → datasources → deploy); progress is polled via GET or pushed
+// to dashboard clients as sop:update WebSocket messages.
+app.post('/api/agents/telemetry/sop/run', (req, res) => {
+  try {
+    const run = telemetrySOP.start({
+      source: String(req.body?.source || 'sdk'),
+      patchId: req.body?.patchId || null,
+      autoDeploy: req.body?.autoDeploy !== false,
+    });
+    res.status(202).json({ runId: run.id, status: run.status, source: run.source, phases: run.phases.map(p => p.key) });
+  } catch (error) {
+    // start() only throws validation errors synchronously (unknown/empty
+    // data source, no evidence) besides the concurrent-run guard.
+    const status = error.message.includes('already in progress') ? 409 : 400;
+    res.status(status).json({ error: error.message, availableSources: telemetrySOP.getAvailableSources() });
+  }
+});
+
+app.get('/api/agents/telemetry/sop', (req, res) => {
+  res.json(telemetrySOP.getSnapshot());
+});
+
+app.get('/api/data-sources', (req, res) => {
+  res.json(getDataSources(req.query.status || null));
 });
 
 // ---- Hermes patch proposal API ----

@@ -1,0 +1,37 @@
+{
+  "dataSources": [
+    {
+      "id": "healing_events",
+      "name": "Healing & Sustain Events",
+      "description": "Track every instance of HP recovery: source (skill, potion, passive regen, lifesteal), amount healed, overheal wasted, and current HP at time of heal. Also emit a 'healing_attempted' event when a heal skill is pressed but fails (insufficient MP, on cooldown, out of range).",
+      "rationale": "hpGained=0 across all sessions means either the heal skill doesn't exist, costs too much, is never unlocked, or the player dies before they can use it. Without healing telemetry we cannot distinguish 'mechanic is broken' from 'mechanic is unused'. This is the single biggest blind spot for an action RPG — survivability is the root cause of the 180 deaths/min and 0% completion rate.",
+      "kpiSupported": "sessionCompletionRate, deathsPerMinute, sessionDuration",
+      "exampleEvent": {
+        "type": "healing_received",
+        "fields": ["source_skill_id", "amount_healed", "overheal", "hp_before", "hp_after", "mp_cost", "heal_blocked_reason", "timestamp_ms"]
+      }
+    },
+    {
+      "id": "death_context",
+      "name": "Death Context Snapshot",
+      "description": "At the moment of player death, capture a frozen snapshot: which enemy types were within aggro range, total simultaneous enemies engaging, time since last heal attempt, HP at start of the lethal encounter, distance from spawn, and whether the player was mid-skill-cast. One event per death.",
+      "rationale": "Current telemetry tells us players die 3x more than they kill, but not WHY. The 87% rift_knight damage share is a symptom — we need to know if players are dying to 1 rift_knight over 10 seconds (tuning problem) or to 3 rift_knight simultaneously in 2 seconds (spawn/grouping problem). death_context unblocks encounter design decisions that raw damage totals cannot.",
+      "kpiSupported": "deathsPerMinute, killDeathRatio, sessionDuration",
+      "exampleEvent": {
+        "type": "death_context",
+        "fields": ["enemy_type_ids", "enemy_count", "time_alive_ms", "hp_at_encounter_start", "last_heal_attempt_ms_ago", "distance_from_spawn", "was_casting_skill", "damage_taken_last_3s", "timestamp_ms"]
+      }
+    },
+    {
+      "id": "session_lifecycle",
+      "name": "Session Lifecycle & Progression",
+      "description": "Emit events at session boundaries and progression milestones: session_start (with character loadout), session_end (with reason: death / quit / timeout / completion / crash), checkpoint_reached (zone, boss_trigger, wave_number), and progression_percentage (0-100 estimated completion).",
+      "rationale": "0 completed sessions is the #1 churn signal but we have zero visibility into WHY sessions end. Did players quit after 30 seconds? Did the game crash? Did they reach wave 5 and die? Without end_reason we cannot design interventions — a rage-quit at 10 seconds needs a different fix than a death at wave 10. checkpoint_reached gives us the first real funnel analysis: '70% of players reach wave 3, 5% reach wave 5' tells us exactly where to focus difficulty tuning.",
+      "kpiSupported": "sessionCompletionRate, sessionDuration, totalSkillUses",
+      "exampleEvent": {
+        "type": "session_end",
+        "fields": ["end_reason", "highest_checkpoint", "progression_pct", "total_enemies_killed", "total_damage_dealt", "total_damage_taken", "skill_uses_total", "session_duration_ms", "patch_id"]
+      }
+    }
+  ]
+}
