@@ -57,20 +57,57 @@ export class RiftSystem {
     }
 
     const dist = tileDistance(this.player.pos, this.portalPos);
-    if (dist < 2.5 && !this.showPrompt) {
-      this.showPrompt = true;
-      this._promptEl = document.createElement('div');
-      this._promptEl.style.cssText = 'position:fixed;bottom:140px;left:50%;transform:translateX(-50%);background:rgba(10,6,18,0.9);border:2px solid #e8ff47;padding:8px 20px;color:#e8ff47;font-family:monospace;font-size:14px;border-radius:6px;z-index:200;pointer-events:none;';
-      this._promptEl.textContent = 'Press F to Enter Rift';
-      document.body.appendChild(this._promptEl);
-    } else if (dist >= 2.5 && this.showPrompt) {
-      this.showPrompt = false;
-      if (this._promptEl) { this._promptEl.remove(); this._promptEl = null; }
+    const near = dist < 2.5;
+
+    if (!near) {
+      if (this.showPrompt) {
+        this.showPrompt = false;
+        if (this._promptEl) { this._promptEl.remove(); this._promptEl = null; }
+      }
+      return;
     }
+
+    // Gate: the portal is CLOSED until every garden enemy is defeated.
+    const remaining = this._gardenEnemiesRemaining();
+    const gateOpen = remaining === 0;
+    const label = gateOpen
+      ? 'Press F to Enter Rift'
+      : `Defeat ${remaining} enemy${remaining === 1 ? '' : 'ies'} to open the Rift`;
+
+    if (!this._promptEl) {
+      this._promptEl = document.createElement('div');
+      this._promptEl.style.cssText = 'position:fixed;bottom:140px;left:50%;transform:translateX(-50%);background:rgba(10,6,18,0.9);padding:8px 20px;font-family:monospace;font-size:14px;border-radius:6px;z-index:200;pointer-events:none;border:2px solid;';
+      document.body.appendChild(this._promptEl);
+    }
+    // Colour reflects state: yellow when open, red when gated.
+    this._promptEl.style.borderColor = gateOpen ? '#e8ff47' : '#ff5555';
+    this._promptEl.style.color       = gateOpen ? '#e8ff47' : '#ff8888';
+    this._promptEl.textContent = label;
+
+    // Track state flags so enterRift() can reject without racing the UI.
+    this.showPrompt = true;
+    this.gateOpen = gateOpen;
+  }
+
+  /**
+   * Count alive garden enemies. Dungeon enemies (spawned by the wave
+   * system into `this.dungeonEnemies`) are excluded — they only exist
+   * once the player is already inside the rift.
+   */
+  _gardenEnemiesRemaining() {
+    const dungeonIds = new Set(this.dungeonEnemies);
+    let n = 0;
+    for (const e of this.world.query('isEnemy', 'stats')) {
+      if (dungeonIds.has(e.id)) continue;
+      if (e.stats.hp > 0) n++;
+    }
+    return n;
   }
 
   enterRift() {
     if (this.inDungeon) return;
+    // Gate: refuse until every garden enemy is down.
+    if (this._gardenEnemiesRemaining() > 0) return;
     this.inDungeon = true;
     this.currentWave = 0;
     this.dungeonCleared = false;
