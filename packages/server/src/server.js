@@ -13,6 +13,8 @@ import { HermesBalanceAgent } from './agents/hermes-balance-agent.js';
 import { getBalance, setBalance, getAllBalance, getMatchHistory, getAdjustments, getClasses, getClass, getAggregateStats, recordMatch, initDB } from './database.js';
 import { getRuntimeConfig } from './runtime-config.js';
 import { verifyConnection as verifyPostgresConnection } from './db/pool.js';
+import { seedPatches } from './patch-seeder.js';
+import { SessionManager } from './session-manager.js';
 
 const app = express();
 app.use(cors());
@@ -26,6 +28,13 @@ const telemetryAgent = new TelemetryAgent();
 const abAgent = new ABTestingAgent();
 const dataAgent = new DataCleaningAgent();
 const hermesAgent = new HermesBalanceAgent({ telemetryAgent });
+// A/B collection session lifecycle (Postgres). onSessionEnded is where
+// Phase 6's path compressor will subscribe.
+const sessionManager = new SessionManager({
+  onSessionEnded: (sessionId) => {
+    // TODO(phase-6): compressSession(sessionId) here
+  },
+});
 
 // ---- WebSocket Routing ----
 const clients = new Map(); // ws -> { type, id }
@@ -37,35 +46,85 @@ wss.on('connection', (ws, req) => {
   else if (url.includes('data')) clientType = 'data';
   else if (url.includes('dashboard')) clientType = 'dashboard';
 
+  // playerId query param — used by the A/B session flow. Fine if absent
+  // for pure dashboard clients that never send session:hello.
+  let playerId = null;
+  try {
+    const parsed = new URL(url, 'ws://placeholder');
+    playerId = parsed.searchParams.get('playerId');
+  } catch { /* ignore */ }
+
   const clientId = `${clientType}_${Date.now()}`;
-  clients.set(ws, { type: clientType, id: clientId });
-  console.log(`[WS] ${clientType} connected (${clients.size} total)`);
+  clients.set(ws, { type: clientType, id: clientId, playerId });
+  console.log(`[WS] ${clientType} connected${playerId ? ` player=${playerId}` : ''} (${clients.size} total)`);
 
   ws.on('message', (raw) => {
+    let msg;
     try {
-      const msg = JSON.parse(raw.toString());
-      handleMessage(ws, msg, clientType);
+      msg = JSON.parse(raw.toString());
     } catch (e) {
       console.error('[WS] Parse error:', e.message);
+      return;
     }
+    handleMessage(ws, msg, clientType).catch(err => {
+      console.error(`[WS] handler error (${msg?.type}):`, err.message);
+    });
   });
 
   ws.on('close', () => {
     clients.delete(ws);
+    sessionManager.endSession(ws, 'disconnect').catch(err => {
+      console.error('[WS] endSession failed on close:', err.message);
+    });
     console.log(`[WS] ${clientType} disconnected (${clients.size} total)`);
   });
 });
 
-function handleMessage(ws, msg, clientType) {
+async function handleMessage(ws, msg, clientType) {
   switch (msg.type) {
-    case 'telemetry:batch':
-      telemetryAgent.ingest(msg.events || []);
-      // Broadcast updated telemetry to dashboard clients
+    // -- A/B session lifecycle -----------------------------------
+    case 'session:hello': {
+      const pid = msg.playerId || clients.get(ws)?.playerId;
+      if (!pid) {
+        ws.send(JSON.stringify({ type: 'session:error', reason: 'playerId required' }));
+        return;
+      }
+      try {
+        const entry = await sessionManager.startSession(ws, pid);
+        ws.send(JSON.stringify({
+          type: 'session:init',
+          sessionId: entry.sessionId,
+          patchId: entry.patchId,
+          patchName: entry.patchDef.name,
+          variant: entry.variant,
+          mapConfig: entry.variant === 'A' ? entry.patchDef.variantA : entry.patchDef.variantB,
+        }));
+        broadcast('dashboard', { type: 'ab:update', snapshot: await abAgent.getSnapshot() });
+      } catch (err) {
+        console.error('[Session] hello failed:', err.message);
+        ws.send(JSON.stringify({ type: 'session:error', reason: err.message }));
+      }
+      return;
+    }
+
+    case 'session:progress':
+      // Optional client hint before disconnect (final stats).
+      sessionManager.updateFinals(ws, msg);
+      return;
+
+    // -- Telemetry ingest ---------------------------------------
+    case 'telemetry:batch': {
+      const events = msg.events || [];
+      // Legacy path: telemetryAgent + dashboard broadcast.
+      telemetryAgent.ingest(events);
       broadcast('dashboard', {
         type: 'telemetry:update',
         snapshot: telemetryAgent.getSnapshot(),
       });
-      break;
+      // New path: DB writes via session-manager (no-op if no session).
+      await sessionManager.ingest(ws, events);
+      return;
+    }
 
     case 'data:batch':
       dataAgent.ingest(msg.events || []);
@@ -73,20 +132,19 @@ function handleMessage(ws, msg, clientType) {
         type: 'data:update',
         snapshot: dataAgent.getSnapshot(),
       });
-      break;
+      return;
 
+    // -- Deprecated (kept as visible no-ops for old clients) ----
     case 'ab:request_assignment':
-      const assignment = abAgent.assignPlayer(msg.playerId, msg.testId);
-      ws.send(JSON.stringify({ type: 'ab:assignment', ...assignment }));
-      break;
+      ws.send(JSON.stringify({
+        type: 'ab:assignment',
+        error: 'deprecated: send { type: "session:hello", playerId } instead',
+      }));
+      return;
 
     case 'ab:record_event':
-      abAgent.recordEvent(msg.testId, msg.variant, msg.event);
-      broadcast('dashboard', {
-        type: 'ab:update',
-        snapshot: abAgent.getSnapshot(),
-      });
-      break;
+      // Silently drop; new pipeline captures via telemetry:batch.
+      return;
   }
 }
 
@@ -119,8 +177,12 @@ app.post('/api/telemetry/events', (req, res) => {
   res.status(202).json({ accepted: events.length, totalEvents: snapshot.totalEvents });
 });
 
-app.get('/api/ab-tests', (req, res) => {
-  res.json(abAgent.getSnapshot());
+app.get('/api/ab-tests', async (req, res) => {
+  try {
+    res.json(await abAgent.getSnapshot());
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
 });
 
 app.get('/api/data-export', (req, res) => {
@@ -134,13 +196,17 @@ app.get('/api/data-export', (req, res) => {
   }
 });
 
-app.get('/api/agents/status', (req, res) => {
-  res.json({
-    telemetry: telemetryAgent.getStatus(),
-    hermes: hermesAgent.getStatus(),
-    abTesting: abAgent.getStatus(),
-    dataCleaning: dataAgent.getStatus(),
-  });
+app.get('/api/agents/status', async (req, res) => {
+  try {
+    res.json({
+      telemetry: telemetryAgent.getStatus(),
+      hermes: hermesAgent.getStatus(),
+      abTesting: await abAgent.getStatus(),
+      dataCleaning: dataAgent.getStatus(),
+    });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
 });
 
 // ---- Hermes patch proposal API ----
@@ -227,6 +293,7 @@ async function start() {
   // Non-fatal on error so the rest of the server still boots.
   try {
     await verifyPostgresConnection();
+    await seedPatches();
   } catch (err) {
     console.warn(`[DB] Postgres unreachable — A/B collection disabled: ${err.message}`);
   }
