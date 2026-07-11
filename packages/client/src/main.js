@@ -242,6 +242,9 @@ async function initGame(classId = 'warrior') {
   progressionSystem = new ProgressionSystem(playerEntity, emitEvent);
   const inventorySystem = new InventorySystem(playerEntity, emitEvent);
   const riftSystem = new RiftSystem(playerEntity, world, assets, camera, emitEvent, progressionSystem, inventorySystem);
+  // Default portal — Minimap reads world.portalPos; keep it in sync with
+  // rift-system's fallback in case A/B assignment is skipped.
+  world.portalPos = riftSystem.portalPos;
   // Hand the A/B-assigned map bundle over so the rift renders the
   // assigned dungeon variant instead of the procedural fallback.
   if (abAssignment?.mapConfig) {
@@ -250,6 +253,9 @@ async function initGame(classId = 'warrior') {
     // prompt shows near the actual assigned portal tile.
     if (abAssignment.mapConfig.garden?.portal) {
       riftSystem.portalPos = { ...abAssignment.mapConfig.garden.portal };
+      // Mirror to world so systems that don't hold a riftSystem ref
+      // (Minimap) can read the portal tile directly.
+      world.portalPos = riftSystem.portalPos;
     }
   }
 
