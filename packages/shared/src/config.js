@@ -280,33 +280,50 @@ export const MAP = Object.freeze({
   DUNGEON_HEIGHT: 12,
 });
 
-/** A/B test definitions — each defines what varies and the KPIs to track */
-export const AB_TESTS = Object.freeze({
-  shadowStrikeCooldown: {
-    name: 'Shadow Strike Cooldown',
-    param: 'skills.shadowStrike.cooldownMs',
-    variants: {
-      A: { value: 3000, label: '3s cooldown' },
-      B: { value: 2000, label: '2s cooldown' },
+// -----------------------------------------------------------------
+// Patch v0.1 — full-game-version A/B test (map layouts differ)
+// -----------------------------------------------------------------
+import { validatePatch } from './patch.js';
+import gardenA  from './maps/patch-v01/garden-a.js';
+import gardenB  from './maps/patch-v01/garden-b.js';
+import dungeonA from './maps/patch-v01/dungeon-a.js';
+import dungeonB from './maps/patch-v01/dungeon-b.js';
+
+/**
+ * Registered patches. Each patch bundles a full game version:
+ * garden map + dungeon map + spawn positions per variant.
+ * The server persists these into the `patches` table on first boot.
+ */
+export const PATCHES = Object.freeze({
+  'patch-v01': {
+    id: 'patch-v01',
+    name: 'Patch v0.1 — Corridor vs Maze',
+    description: 'Full game-version A/B: linear corridor (A) vs branching maze (B).',
+    variantA: {
+      label: 'A — Linear Corridor',
+      garden: gardenA,
+      dungeon: dungeonA,
     },
-    primaryKpi: 'session_duration',
-    secondaryKpis: ['skill_usage_count', 'death_count', 'completion_rate'],
-    minSamples: 10,
-    significanceLevel: 0.05,
-  },
-  enemyDensity: {
-    name: 'Dungeon Enemy Density',
-    param: 'dungeon.enemyCount',
-    variants: {
-      A: { value: 5, label: '5 enemies' },
-      B: { value: 8, label: '8 enemies' },
+    variantB: {
+      label: 'B — Branching Maze',
+      garden: gardenB,
+      dungeon: dungeonB,
     },
-    primaryKpi: 'completion_rate',
-    secondaryKpis: ['death_count', 'session_duration', 'xp_per_minute'],
-    minSamples: 10,
-    significanceLevel: 0.05,
   },
 });
+
+/**
+ * Legacy AB_TESTS stub — deliberately empty.
+ * Old param-level test scaffolding (skill-cooldown, enemy-density) is
+ * superseded by PATCHES. Kept as an empty frozen object so downstream
+ * imports do not crash while Phases 3 and 5 rewrite the consumers.
+ * TODO: delete after ab-testing-agent.js and client ab-testing.js migrate.
+ */
+export const AB_TESTS = Object.freeze({});
+
+// Fail fast at boot if any patch is malformed. Cheap insurance — throws
+// with a specific message instead of surfacing as a downstream game bug.
+for (const patch of Object.values(PATCHES)) validatePatch(patch);
 
 /** Server config */
 export const SERVER = Object.freeze({
