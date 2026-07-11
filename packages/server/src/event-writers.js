@@ -38,6 +38,9 @@ export async function fanOut({ sessionId, patchId, variant, events }) {
   const purchases = [], defects = [], deaths = [], engagements = [];
 
   for (const e of events) {
+    // Skip null/non-object entries — a malformed batch element must not
+    // take down the whole ingest.
+    if (!e || typeof e !== 'object' || !e.type) continue;
     const p = payloadOf(e);
     const x = p.x ?? e.x ?? null;
     const y = p.y ?? e.y ?? null;

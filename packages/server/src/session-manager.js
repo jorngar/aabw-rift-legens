@@ -24,16 +24,29 @@ export class SessionManager {
   constructor({ onSessionEnded } = {}) {
     /** @type {Map<any, object>} ws -> entry */
     this.sessions = new Map();
+    /** @type {Map<string, any>} playerId -> ws (active connection tracker) */
+    this.playerToWs = new Map();
     this.onSessionEnded = onSessionEnded || null;
   }
 
   /**
    * Create a session row for this ws + player. Idempotent — reusing
-   * the same ws twice returns the existing entry.
+   * the same ws twice returns the existing entry. If the same player
+   * opens a NEW ws while their old one is still tracked, we end the
+   * prior session first so aggregates aren't double-counted.
    */
   async startSession(ws, playerId) {
     const existing = this.sessions.get(ws);
     if (existing) return existing;
+
+    // Evict prior connection for this player, if any.
+    const priorWs = this.playerToWs.get(playerId);
+    if (priorWs && priorWs !== ws) {
+      console.log(`[Session] evicting prior connection for player=${playerId}`);
+      await this.endSession(priorWs, 'reconnect').catch(err => {
+        console.error(`[Session] prior evict failed:`, err.message);
+      });
+    }
 
     const patchRow = await findActivePatch();
     if (!patchRow) throw new Error('no active patch — has the seeder run?');
@@ -62,6 +75,7 @@ export class SessionManager {
     };
     this._armIdle(ws, entry);
     this.sessions.set(ws, entry);
+    this.playerToWs.set(playerId, ws);
 
     console.log(`[Session] start ${sessionId} player=${playerId} patch=${patchId} variant=${variant}`);
     return entry;
@@ -117,6 +131,10 @@ export class SessionManager {
 
     console.log(`[Session] end ${entry.sessionId} reason=${reason}`);
     this.sessions.delete(ws);
+    // Only drop the playerId→ws mapping if this ws is still the tracked one.
+    if (this.playerToWs.get(entry.playerId) === ws) {
+      this.playerToWs.delete(entry.playerId);
+    }
 
     if (this.onSessionEnded) {
       // Fire-and-forget so a slow subscriber (e.g. path compressor) never blocks close.
@@ -133,10 +151,12 @@ export class SessionManager {
     if (entry.idleTimer) clearTimeout(entry.idleTimer);
     entry.idleTimer = setTimeout(() => {
       console.log(`[Session] idle timeout ${entry.sessionId}`);
-      this.endSession(ws, 'idle').then(() => {
-        // 3 = CLOSED
-        if (ws && typeof ws.terminate === 'function' && ws.readyState !== 3) ws.terminate();
-      });
+      this.endSession(ws, 'idle')
+        .then(() => {
+          // 3 = CLOSED
+          if (ws && typeof ws.terminate === 'function' && ws.readyState !== 3) ws.terminate();
+        })
+        .catch(err => console.error(`[Session] idle-close failed:`, err.message));
     }, IDLE_TIMEOUT_MS);
   }
 }

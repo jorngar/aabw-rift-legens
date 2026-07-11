@@ -84,7 +84,10 @@ async function handleMessage(ws, msg, clientType) {
   switch (msg.type) {
     // -- A/B session lifecycle -----------------------------------
     case 'session:hello': {
-      const pid = msg.playerId || clients.get(ws)?.playerId;
+      // Prefer the URL-query playerId over msg.playerId so a stale
+      // client cannot silently swap identity after WS upgrade.
+      // TODO(auth): playerId is still unauthenticated — sign it upstream.
+      const pid = clients.get(ws)?.playerId || msg.playerId;
       if (!pid) {
         ws.send(JSON.stringify({ type: 'session:error', reason: 'playerId required' }));
         return;
