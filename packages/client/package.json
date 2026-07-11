@@ -7,11 +7,13 @@
     "dev": "vite",
     "build": "vite build",
     "preview": "vite preview",
+    "start": "serve -s dist -l ${PORT:-4173}",
     "test": "node --test test/*.test.js"
   },
   "dependencies": {
     "@rift-seed/shared": "workspace:*",
-    "pixi.js": "^7.4.0"
+    "pixi.js": "^7.4.0",
+    "serve": "^14.2.4"
   },
   "devDependencies": {
     "playwright": "^1.61.1",
