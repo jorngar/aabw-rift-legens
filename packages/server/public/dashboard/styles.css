@@ -277,3 +277,38 @@ main { padding: 22px 28px 40px; }
 }
 
 .tooltip { position: fixed; pointer-events: none; background: #000; border: 1px solid var(--line); color: var(--ink); font-size: 12px; padding: 6px 9px; border-radius: 6px; z-index: 50; opacity: 0; transition: opacity 0.1s; }
+
+/* ---------- Telemetry Agent SOP tab ---------- */
+.sop-input {
+  background: var(--panel); border: 1px solid var(--line); border-radius: 8px;
+  color: var(--ink); padding: 8px 12px; font-size: 13px; width: 140px;
+  font-family: inherit;
+}
+.sop-toggle { display: flex; align-items: center; gap: 6px; font-size: 12px; color: var(--muted); }
+.sop-status { margin: 14px 0 10px; display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+.sop-run-id { font-family: ui-monospace, monospace; font-size: 12px; color: var(--muted); }
+.sop-run-status {
+  font-size: 11px; text-transform: uppercase; letter-spacing: 0.5px;
+  padding: 3px 10px; border-radius: 6px; background: var(--panel-2); font-weight: 700;
+}
+.sop-run-status.good { color: var(--good); }
+.sop-run-status.bad { color: var(--bad); }
+.sop-run-status.warn { color: var(--warn); }
+.sop-error { color: var(--bad); font-size: 12px; width: 100%; }
+.sop-phases { display: flex; flex-direction: column; gap: 6px; margin-bottom: 18px; }
+.sop-phase {
+  display: flex; align-items: center; gap: 12px;
+  background: var(--panel); border: 1px solid var(--line); border-radius: 10px;
+  padding: 10px 14px; font-size: 13px;
+}
+.sop-phase .idx { color: var(--muted); font-size: 11px; width: 14px; }
+.sop-phase .icon { width: 18px; text-align: center; }
+.sop-phase .title { flex: 1; }
+.sop-phase.pending { opacity: 0.55; }
+.sop-phase.running { border-color: var(--accent); }
+.sop-phase.running .icon { color: var(--accent); animation: sop-spin 1.2s linear infinite; }
+.sop-phase.done .icon { color: var(--good); }
+.sop-phase.failed { border-color: var(--bad); }
+.sop-phase.failed .icon { color: var(--bad); }
+@keyframes sop-spin { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }
+.rec .evidence { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 6px; }

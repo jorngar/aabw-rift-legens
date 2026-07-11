@@ -2,6 +2,7 @@
 node_modules/
 **/node_modules/
 .pnpm-store/
+package-lock.json
 
 # Build and test output
 dist/

@@ -65,7 +65,7 @@ export function spriteSyncSystem(world, dt) {
     } else if (hasEffect(entity.id, 'dot')) {
       entity.sprite.tint = 0x88ff88; // green tint for poisoned
     } else {
-      entity.sprite.tint = 0xffffff;
+      entity.sprite.tint = entity.baseTint ?? 0xffffff;
     }
   }
 }
@@ -82,6 +82,7 @@ export function enemyAISystem(world, dt, emitEvent) {
 
     const dist = tileDistance(entity.pos, player.pos);
     const def = ENEMIES[entity.enemyType] || ENEMIES.shadowBeast;
+    const previousState = entity.aiState;
 
     combatTick(entity, dt);
 
@@ -89,6 +90,9 @@ export function enemyAISystem(world, dt, emitEvent) {
 
     // Stun check — skip all AI if stunned
     if (hasEffect(entity.id, 'stun')) {
+      if (previousState !== 'stunned' && entity.animations?.block) {
+        triggerAttackAnimation(entity, 'block');
+      }
       entity.aiState = 'stunned';
       entity.targetPos = null;
       continue;
@@ -101,6 +105,12 @@ export function enemyAISystem(world, dt, emitEvent) {
       entity.aiState = 'chasing';
     } else {
       entity.aiState = 'idle';
+    }
+
+    // The slime pack includes a hop/fall strip. Play it once when the creature
+    // aggroes, then let its normal walk loop carry continued pursuit.
+    if (entity.aiState === 'chasing' && previousState !== 'chasing' && entity.animations?.jump) {
+      triggerAttackAnimation(entity, 'jump');
     }
 
     switch (entity.aiState) {
@@ -125,7 +135,9 @@ export function enemyAISystem(world, dt, emitEvent) {
         entity.path = [];
         const result = meleeAttack(entity, player, emitEvent);
         if (result.hit) {
-          triggerAttackAnimation(entity);
+          const animationState = entity.nextAttackAnimation || 'attack';
+          entity.nextAttackAnimation = animationState === 'attack' ? 'attack2' : 'attack';
+          triggerAttackAnimation(entity, animationState);
         }
         break;
     }

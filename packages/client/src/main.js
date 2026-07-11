@@ -3,7 +3,7 @@
 // ============================================================
 import * as PIXI from 'pixi.js';
 import { loadRiftAssets } from './infrastructure/assets/rift-asset-loader.js';
-import { Camera, tileToScreen, tileDistance } from './game/core/isometric.js';
+import { Camera, getDirection, tileToScreen, tileDistance } from './game/core/isometric.js';
 import { renderTileMap, generateGardenMap } from './game/core/tilemap.js';
 import { World, createEntity } from './game/core/ecs.js';
 import { meleeAttack, combatTick, useSkill } from './game/core/combat.js';
@@ -34,12 +34,29 @@ import { DemoRunner } from './app/demo/scenario-runner.js';
 import {
   animationSystem,
   createStatefulSprite,
-  enemyAnimationProfile,
+  ORC_ANIMATION_PROFILE,
   playerAnimationProfile,
   SLIME_ANIMATION_PROFILE,
   setEntityAnimation,
   triggerAttackAnimation,
 } from './game/systems/animation-system.js';
+
+const CLASS_SPRITE_TINTS = Object.freeze({
+  warrior: 0xffffff,
+  mage: 0xbfdcff,
+  rogue: 0xc9ffc2,
+  ranger: 0xffddb0,
+});
+
+const BLOCK_ANIMATION_SKILLS = new Set(['heal', 'warCry', 'summonWolf']);
+const JUMP_ANIMATION_SKILLS = new Set(['dash', 'riftTeleport']);
+
+function animationStateForSkill(skillId, classId) {
+  if (classId === 'ranger' && skillId === 'arrowShot') return 'attack3';
+  if (JUMP_ANIMATION_SKILLS.has(skillId)) return 'jump';
+  if (BLOCK_ANIMATION_SKILLS.has(skillId)) return 'block';
+  return 'attack2';
+}
 
 // ---- Bootstrap ----
 const debugClass = new URLSearchParams(window.location.search).get('autostart');
@@ -120,9 +137,8 @@ async function initGame(classId = 'warrior') {
   camera.container.y = app.screen.height / 2 - startScreen.y;
 
   // ---- Create Player — explicit idle / move / attack states ----
-  const usesSoldierSprite = classId === 'warrior';
   const playerVisual = createStatefulSprite(assets, playerAnimationProfile(classId), {
-    scale: usesSoldierSprite ? 2.2 : 0.18,
+    scale: 2.2,
     anchorY: 0.88,
   });
   const playerSprite = playerVisual.sprite;
@@ -176,6 +192,7 @@ async function initGame(classId = 'warrior') {
     },
     skillCooldowns: {},
     sprite: playerSprite,
+    baseTint: CLASS_SPRITE_TINTS[classId] || 0xffffff,
     animations: playerVisual.animations,
     animationState: 'idle',
   });
@@ -231,8 +248,8 @@ async function initGame(classId = 'warrior') {
   function spawnEnemy(type, x, y) {
     const def = ENEMIES[type];
     const isShadowSlime = type === 'shadowBeast';
-    const visual = createStatefulSprite(assets, isShadowSlime ? SLIME_ANIMATION_PROFILE : enemyAnimationProfile('heroHeavy'), {
-      scale: isShadowSlime ? 2 : 1.05,
+    const visual = createStatefulSprite(assets, isShadowSlime ? SLIME_ANIMATION_PROFILE : ORC_ANIMATION_PROFILE, {
+      scale: isShadowSlime ? 2 : 2.3,
       anchorY: 0.82,
     });
     const sprite = visual.sprite;
@@ -308,7 +325,13 @@ async function initGame(classId = 'warrior') {
       const result = useSkill(attacker, skillId, target, targetPos, emit, world);
       if (result.success) {
         progressionSystem.addSkillUse();
-        triggerAttackAnimation(playerEntity);
+        if (target?.pos) {
+          playerEntity.direction = getDirection(
+            target.pos.x - playerEntity.pos.x,
+            target.pos.y - playerEntity.pos.y,
+          );
+        }
+        triggerAttackAnimation(playerEntity, animationStateForSkill(skillId, classId));
         const effectTarget = target && result.result?.hit ? target : playerEntity;
         const ps = tileToScreen(effectTarget.pos.x, effectTarget.pos.y);
         const sx = ps.x + camera.container.x;
@@ -461,6 +484,10 @@ async function initGame(classId = 'warrior') {
         if (dist <= playerEntity.attackRange) {
           playerEntity.targetPos = null;
           playerEntity.path = [];
+          playerEntity.direction = getDirection(
+            target.pos.x - playerEntity.pos.x,
+            target.pos.y - playerEntity.pos.y,
+          );
           const result = meleeAttack(playerEntity, target, emitEvent);
           if (result.hit) {
             triggerAttackAnimation(playerEntity);
@@ -486,9 +513,10 @@ async function initGame(classId = 'warrior') {
 
     // WASD movement
     const { dx, dy } = getMovementInput();
-    playerEntity.manualMovement = dx !== 0 || dy !== 0;
-    if (dx !== 0 || dy !== 0) {
+    playerEntity.manualMovement = !playerEntity.isDying && (dx !== 0 || dy !== 0);
+    if (!playerEntity.isDying && (dx !== 0 || dy !== 0)) {
       const speed = (playerEntity.stats.speed || 3) * 0.05;
+      playerEntity.direction = getDirection(dx, dy);
       playerEntity.pos.x += dx * speed;
       playerEntity.pos.y += dy * speed;
       playerEntity.pos.x = Math.max(1, Math.min(14, playerEntity.pos.x));
@@ -560,11 +588,22 @@ async function initGame(classId = 'warrior') {
     }
 
     // Player death check
-    if (playerEntity.stats.hp <= 0) {
+    if (playerEntity.stats.hp <= 0 && !playerEntity.isDying) {
+      playerEntity.isDying = true;
+      playerEntity.targetPos = null;
+      playerEntity.path = [];
+      playerEntity.attackTarget = null;
+      playerEntity.isMoving = false;
+      playerEntity.isAttacking = false;
+      playerEntity.actionAnimationState = null;
       flashRed();
       showDefeat({ waves: riftSystem.currentWave, kills: progressionSystem.kills });
-      playerEntity.stats.hp = playerEntity.stats.maxHp; // prevent re-trigger
+      setEntityAnimation(playerEntity, 'death', true);
       recordMatchToServer(); // persist the run so the dashboard analytics have data
+      setTimeout(() => {
+        playerEntity.stats.hp = playerEntity.stats.maxHp;
+        playerEntity.isDying = false;
+      }, 820);
     }
   });
 
@@ -637,6 +676,7 @@ async function initGame(classId = 'warrior') {
     coordinateSystem: 'tile grid; origin top-left; +x right; +y down',
     mode: riftSystem.inDungeon ? `rift_tier_${riftSystem.dungeonTier}` : 'seed_garden',
     player: {
+      classId,
       x: Number(playerEntity.pos.x.toFixed(2)),
       y: Number(playerEntity.pos.y.toFixed(2)),
       hp: Number(playerEntity.stats.hp.toFixed(1)),
@@ -645,6 +685,10 @@ async function initGame(classId = 'warrior') {
       animation: playerEntity.animationState,
       moving: playerEntity.isMoving,
       attacking: Boolean(playerEntity.isAttacking),
+      dying: Boolean(playerEntity.isDying),
+      direction: playerEntity.direction,
+      facing: playerEntity.sprite.scale.x < 0 ? 'left' : 'right',
+      tint: `#${(playerEntity.baseTint || 0xffffff).toString(16).padStart(6, '0')}`,
       targetId: playerEntity.attackTarget?.id || null,
     },
     enemies: world.query('isEnemy', 'pos', 'stats').filter(enemy => enemy.stats.hp > 0).map(enemy => ({
