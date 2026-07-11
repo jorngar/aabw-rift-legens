@@ -79,10 +79,11 @@ async function initGame(classId = 'warrior') {
   const runtimePlayerDefaults = await loadRuntimeBalance();
 
   // ---- Init Systems ----
-  // A/B: playerId comes from URL (?playerId=alice) so we can force cohort
-  // splits by opening multiple browser tabs. Falls back to random.
-  const abPlayerId = new URLSearchParams(window.location.search).get('playerId');
-  const playerId = abPlayerId || ('player_' + Math.random().toString(36).slice(2, 8));
+  // A/B routing is decided by the LB — the client just needs a random
+  // handle so the server can key its session row and reconnect logic.
+  // We do not track individual players; the dashboard aggregates by
+  // variant only.
+  const playerId = 'player_' + Math.random().toString(36).slice(2, 8);
   const telemetry = new TelemetrySystem({
     playerId,
     patchId: 'v0.1.0',
