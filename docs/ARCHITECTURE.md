@@ -30,7 +30,8 @@ packages/
       main.js                   Composition root and game loop
   server/
     public/dashboard/           Static agent dashboard
-    src/                        HTTP/WS APIs, agents, persistence
+    src/                        HTTP/WS APIs, agents, SQLite balance persistence
+      db/                       Postgres telemetry schema and repositories
     test/
   shared/
     src/                        Cross-runtime events and balance contracts
@@ -47,6 +48,14 @@ docs/
 4. `presentation` may read game state and call controller/system APIs.
 5. `infrastructure` implements boundaries to files, WebSockets, and analytics services.
 6. `main.js` is the composition root. It is the only module expected to know every layer.
+
+## Data ownership
+
+- `@rift-seed/shared/config` is the authoritative game catalog and balance definition.
+- `@rift-seed/shared/balance` owns pure class, weapon, skill, level, and enemy scaling formulas.
+- SQLite stores the live Hermes balance values, applied adjustments, and summarized match history.
+- Postgres stores schema-versioned gameplay events plus a versioned copy of the shared game catalog for telemetry joins.
+- Postgres failures disable durable telemetry without preventing local gameplay or Hermes' SQLite balance loop from starting.
 
 Use the real `@rift-seed/shared` workspace package for cross-package imports. Do not add bundler-only aliases for shared contracts.
 

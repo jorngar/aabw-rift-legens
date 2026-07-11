@@ -2,6 +2,7 @@
 // Input Handler — class-aware, proper controls
 // ============================================================
 import { screenToTile } from '../core/isometric.js';
+import { combatDistance } from '../core/combat.js';
 import { SKILLS } from '@rift-seed/shared/config';
 
 /**
@@ -68,15 +69,16 @@ export function setupInput({ canvas, camera, player, world, emitEvent, useSkillF
     const tx = Math.round(tilePos.x);
     const ty = Math.round(tilePos.y);
 
-    // Check if clicking on an enemy
+    // Check if clicking on an enemy — hit circle sized to the enemy's
+    // collision radius plus a small click-tolerance pad
     let clickedEnemy = null;
+    let clickedDist = Infinity;
     for (const enemy of world.query('isEnemy', 'pos', 'stats')) {
       if (enemy.stats.hp <= 0) continue;
-      const dx = Math.abs(Math.round(enemy.pos.x) - tx);
-      const dy = Math.abs(Math.round(enemy.pos.y) - ty);
-      if (dx <= 1 && dy <= 1) {
+      const dist = Math.hypot(enemy.pos.x - tilePos.x, enemy.pos.y - tilePos.y);
+      if (dist <= (enemy.hitRadius || 0.5) + 0.4 && dist < clickedDist) {
         clickedEnemy = enemy;
-        break;
+        clickedDist = dist;
       }
     }
 
@@ -107,7 +109,7 @@ function findNearestEnemy(player, world) {
   let minDist = Infinity;
   for (const enemy of world.query('isEnemy', 'pos', 'stats')) {
     if (enemy.stats.hp <= 0) continue;
-    const dist = Math.abs(enemy.pos.x - player.pos.x) + Math.abs(enemy.pos.y - player.pos.y);
+    const dist = combatDistance(player, enemy);
     if (dist < minDist) {
       minDist = dist;
       nearest = enemy;

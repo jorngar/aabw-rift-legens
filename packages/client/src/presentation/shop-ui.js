@@ -2,6 +2,7 @@
 // Shop UI — HTML overlay
 // ============================================================
 import { ITEMS, WEAPONS } from '@rift-seed/shared/config';
+import { getSellPrice, getWeaponContribution } from '@rift-seed/shared/balance';
 
 export class ShopUI {
   constructor(inventory) {
@@ -48,28 +49,44 @@ export class ShopUI {
 
     if (this.activeTab === 'buy') {
       for (const [id, item] of Object.entries(ITEMS)) {
+        if (item.sellOnly) continue; // monster loot — sold to the merchant, not bought
+        const canAfford = this.inventory.gold >= item.price;
         html += `<div style="display:flex;justify-content:space-between;align-items:center;padding:6px 8px;margin:4px 0;background:#1a1a2a;border-radius:4px;">
           <div><div style="color:#fff;font-size:11px;">${item.name}</div><div style="color:#666;font-size:9px;">${item.desc}</div></div>
-          <div style="display:flex;align-items:center;gap:8px;"><span style="color:#f59e0b;font-size:11px;">${item.price}g</span><button data-buy="${id}" style="padding:4px 12px;background:#e8ff47;color:#000;border:none;cursor:pointer;font-family:monospace;font-size:10px;border-radius:3px;">BUY</button></div>
+          <div style="display:flex;align-items:center;gap:8px;"><span style="color:#f59e0b;font-size:11px;">${item.price}g</span><button data-buy="${id}" ${canAfford ? '' : 'disabled'} style="padding:4px 12px;background:${canAfford ? '#e8ff47' : '#444'};color:${canAfford ? '#000' : '#888'};border:none;cursor:${canAfford ? 'pointer' : 'not-allowed'};font-family:monospace;font-size:10px;border-radius:3px;">${canAfford ? 'BUY' : 'LOCKED'}</button></div>
         </div>`;
       }
     } else if (this.activeTab === 'sell') {
       for (const slot of this.inventory.slots) {
         const item = ITEMS[slot.itemId] || WEAPONS[slot.itemId];
         if (!item) continue;
-        const sellPrice = Math.floor((item.price || 0) / 2);
+        const sellPrice = getSellPrice(item);
+        const canUse = Boolean(item.usableFromInventory);
         html += `<div style="display:flex;justify-content:space-between;align-items:center;padding:6px 8px;margin:4px 0;background:#1a1a2a;border-radius:4px;">
           <div><div style="color:#fff;font-size:11px;">${item.name} x${slot.quantity}</div></div>
-          <div style="display:flex;align-items:center;gap:8px;"><span style="color:#f59e0b;font-size:11px;">${sellPrice}g</span><button data-sell="${slot.itemId}" style="padding:4px 12px;background:#ff8844;color:#000;border:none;cursor:pointer;font-family:monospace;font-size:10px;border-radius:3px;">SELL</button></div>
+          <div style="display:flex;align-items:center;gap:8px;">${canUse ? `<button data-use="${slot.itemId}" style="padding:4px 12px;background:#44ddaa;color:#000;border:none;cursor:pointer;font-family:monospace;font-size:10px;border-radius:3px;">USE</button>` : ''}<span style="color:#f59e0b;font-size:11px;">${sellPrice}g</span><button data-sell="${slot.itemId}" style="padding:4px 12px;background:#ff8844;color:#000;border:none;cursor:pointer;font-family:monospace;font-size:10px;border-radius:3px;">SELL</button></div>
         </div>`;
       }
       if (this.inventory.slots.length === 0) html += `<div style="color:#666;text-align:center;padding:20px;">No items to sell</div>`;
     } else if (this.activeTab === 'weapons') {
       for (const [id, w] of Object.entries(WEAPONS)) {
         const owned = this.inventory.hasItem(id);
-        html += `<div style="display:flex;justify-content:space-between;align-items:center;padding:6px 8px;margin:4px 0;background:#1a1a2a;border-radius:4px;${owned?'border:1px solid #44ff44':''}">
-          <div><div style="color:#fff;font-size:11px;">${w.name}</div><div style="color:#666;font-size:9px;">DMG +${w.damage} ${w.speed>0?'SPD +'+w.speed:''}${w.speed<0?'SPD '+w.speed:''}</div></div>
-          <div style="display:flex;align-items:center;gap:8px;"><span style="color:#f59e0b;font-size:11px;">${w.price}g</span>${owned?`<button data-equip="${id}" style="padding:4px 12px;background:#44ff44;color:#000;border:none;cursor:pointer;font-family:monospace;font-size:10px;border-radius:3px;">EQUIP</button>`:`<button data-buy="${id}" style="padding:4px 12px;background:#e8ff47;color:#000;border:none;cursor:pointer;font-family:monospace;font-size:10px;border-radius:3px;">BUY</button>`}</div>
+        const equipped = this.inventory.equipped.mainHand === id;
+        const canAfford = this.inventory.gold >= w.price;
+        const contribution = getWeaponContribution({
+          classId: this.inventory.player.classId,
+          level: this.inventory.player.level,
+          weaponId: id,
+        });
+        const affinityPct = Math.round(contribution.affinity * 100);
+        const statParts = [`${w.weaponClass.toUpperCase()} ${affinityPct}%`, `DMG +${contribution.damage}`];
+        if (w.attackSpeedPct) statParts.push(`ATK SPD ${w.attackSpeedPct > 0 ? '+' : ''}${Math.round(w.attackSpeedPct * 100)}%`);
+        if (w.rangeBonus) statParts.push(`RANGE +${w.rangeBonus}`);
+        if (w.maxMp) statParts.push(`MP +${w.maxMp}`);
+        if (contribution.skillPower) statParts.push(`SKILL DMG +${contribution.skillPower}`);
+        html += `<div style="display:flex;justify-content:space-between;align-items:center;padding:6px 8px;margin:4px 0;background:#1a1a2a;border-radius:4px;${owned||equipped?'border:1px solid #44ff44':''}">
+          <div><div style="color:#fff;font-size:11px;">${w.name}${equipped?' <span style="color:#44ff44;">[EQUIPPED]</span>':''}</div><div style="color:#666;font-size:9px;">${statParts.join(' | ')}${w.desc?' — '+w.desc:''}</div></div>
+          <div style="display:flex;align-items:center;gap:8px;"><span style="color:#f59e0b;font-size:11px;">${w.price}g</span>${equipped?'':owned?`<button data-equip="${id}" style="padding:4px 12px;background:#44ff44;color:#000;border:none;cursor:pointer;font-family:monospace;font-size:10px;border-radius:3px;">EQUIP</button>`:`<button data-buy="${id}" ${canAfford ? '' : 'disabled'} style="padding:4px 12px;background:${canAfford ? '#e8ff47' : '#444'};color:${canAfford ? '#000' : '#888'};border:none;cursor:${canAfford ? 'pointer' : 'not-allowed'};font-family:monospace;font-size:10px;border-radius:3px;">${canAfford ? 'BUY' : 'LOCKED'}</button>`}</div>
         </div>`;
       }
     }
@@ -85,22 +102,18 @@ export class ShopUI {
     this.el.querySelectorAll('[data-buy]').forEach(btn => {
       btn.addEventListener('click', () => {
         const id = btn.dataset.buy;
-        const item = ITEMS[id] || WEAPONS[id];
-        if (item && this.inventory.gold >= item.price) {
-          this.inventory.gold -= item.price;
-          this.inventory.addItem(id);
-          this.render();
-        }
+        if (this.inventory.purchaseItem(id)) this.render();
       });
     });
     this.el.querySelectorAll('[data-sell]').forEach(btn => {
       btn.addEventListener('click', () => {
         const id = btn.dataset.sell;
-        const item = ITEMS[id];
-        if (item && this.inventory.removeItem(id)) {
-          this.inventory.gold += Math.floor(item.price / 2);
-          this.render();
-        }
+        if (this.inventory.sellItem(id)) this.render();
+      });
+    });
+    this.el.querySelectorAll('[data-use]').forEach(btn => {
+      btn.addEventListener('click', () => {
+        if (this.inventory.useItem(btn.dataset.use)) this.render();
       });
     });
     this.el.querySelectorAll('[data-equip]').forEach(btn => {

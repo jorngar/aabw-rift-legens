@@ -15,8 +15,10 @@
 - Sampled movement paths, distance, turns, and velocity
 - Kills, real player deaths, and per-minute rates
 - Sessions, areas, class, patch, and game-version context
+- Weapon class affinity, effective weapon contribution, player/enemy level, wave, and rift tier
+- Shop purchases, sales, equipment changes, and before/after gold values
 
-The SDK keeps unsent events while offline, caps its local queue, reconnects automatically, and exposes a live local snapshot for the in-game dashboard.
+The SDK keeps unsent events while offline, caps its local queue, reconnects automatically, and exposes a live local snapshot for the in-game dashboard. Normalized events are also persisted to Postgres when configured.
 
 ### 2. Hermes Balance Agent
 
@@ -39,6 +41,10 @@ Hermes proposes a retention hypothesis; it does not claim causality from a singl
 ```bash
 # Install dependencies
 pnpm install
+
+# Start and migrate Postgres telemetry storage
+docker compose up -d postgres
+pnpm --filter @rift-seed/server migrate
 
 # Start client (Vite dev server on :5173)
 pnpm dev
@@ -96,6 +102,7 @@ rift-seed/
 │   │   ├── public/dashboard/      # Static telemetry dashboard
 │   │   ├── src/
 │   │   │   ├── agents/            # Telemetry, A/B, cleaning, Hermes
+│   │   │   ├── db/                # Postgres schema, pool, migrations, repositories
 │   │   │   └── server.js          # HTTP + WS server, API routes
 │   │   └── test/
 │   │
@@ -141,8 +148,11 @@ See [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) for dependency and asset owners
 Game Event → emitEvent() → TelemetrySystem.record()
                          → DataLoggingSystem.record()
                          → WebSocket → Server Agents
+                         → Postgres gameplay_events + game_catalog
                          → Agent Panel (live dashboard)
 ```
+
+SQLite remains the live balance/audit store used by Hermes. Postgres stores normalized gameplay telemetry and the versioned class, weapon, skill, enemy, and item catalog. If Postgres is unavailable, the server still starts and reports `postgresTelemetry: "disabled"` from `/api/health`.
 
 ### Patch Proposal API
 
@@ -153,7 +163,10 @@ curl http://localhost:3001/api/telemetry
 # Optional REST ingestion fallback (the game uses WebSocket batches)
 curl -X POST http://localhost:3001/api/telemetry/events \
   -H 'Content-Type: application/json' \
-  -d '{"events":[{"schemaVersion":"1.0.0","type":"state:sample","patchId":"v0.1.0","sessionId":"demo","actor":{"type":"player"},"metrics":{"hpAfter":500,"mpAfter":100}}]}'
+  -d '{"events":[{"eventId":"demo:1","schemaVersion":"1.1.0","type":"state:sample","timestamp":1700000000000,"patchId":"v0.1.0","gameVersion":"0.1.0","sessionId":"demo","actor":{"type":"player"},"metrics":{"hpAfter":500,"mpAfter":100},"context":{"classId":"warrior","playerLevel":1}}]}'
+
+# Confirm durable telemetry state
+curl http://localhost:3001/api/telemetry/storage
 
 # Ask local Hermes for a validated proposal
 curl -X POST http://localhost:3001/api/agents/hermes/analyze \

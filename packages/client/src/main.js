@@ -6,7 +6,7 @@ import { loadRiftAssets } from './infrastructure/assets/rift-asset-loader.js';
 import { Camera, tileToScreen, tileDistance } from './game/core/isometric.js';
 import { renderTileMap, generateGardenMap } from './game/core/tilemap.js';
 import { World, createEntity } from './game/core/ecs.js';
-import { meleeAttack, combatTick, useSkill } from './game/core/combat.js';
+import { meleeAttack, combatTick, useSkill, combatDistance, computeBaseDamage, getEffectiveAttackRange } from './game/core/combat.js';
 import { movementSystem, spriteSyncSystem, enemyAISystem, depthSortSystem, playerCombatSystem } from './game/systems/game-systems.js';
 import { TelemetrySystem } from './infrastructure/analytics/telemetry.js';
 import { ABTestingSystem } from './infrastructure/analytics/ab-testing.js';
@@ -16,7 +16,8 @@ import { RiftSystem } from './game/systems/rift-system.js';
 import { InventorySystem } from './game/systems/inventory-system.js';
 import { setupInput } from './game/controllers/input-controller.js';
 import { EventType, createEvent } from '@rift-seed/shared/events';
-import { PLAYER_DEFAULTS, ENEMIES, SKILLS, CLIENT, GOLD_DROPS } from '@rift-seed/shared/config';
+import { PLAYER_DEFAULTS, ENEMIES, SKILLS, CLIENT, GOLD_DROPS, CLASS_STATS, ITEM_DROPS } from '@rift-seed/shared/config';
+import { scaleEnemyStats } from '@rift-seed/shared/balance';
 
 // UI
 import { showTitleScreen } from './presentation/title-screen.js';
@@ -154,9 +155,15 @@ async function initGame(classId = 'warrior') {
   playerShadow.style.cssText = 'position:fixed;width:40px;height:12px;background:radial-gradient(ellipse,rgba(0,0,0,0.4) 0%,transparent 70%);pointer-events:none;z-index:43;border-radius:50%;';
   document.body.appendChild(playerShadow);
 
+  // Class modifiers over runtime-tuned defaults: stat multipliers + passives
+  const classStats = CLASS_STATS[classId] || CLASS_STATS.warrior;
+  const classHp = Math.round(runtimePlayerDefaults.maxHp * classStats.hpMult);
+  const classMp = Math.round(runtimePlayerDefaults.maxMp * classStats.mpMult);
   const playerEntity = createEntity({
     isPlayer: true,
     name: 'SEED Cadet',
+    classId,
+    level: 1,
     pos: { x: 8, y: 8 },
     targetPos: null,
     path: null,
@@ -165,14 +172,21 @@ async function initGame(classId = 'warrior') {
     attackTarget: null,
     lastAttack: 0,
     attackCooldownMs: runtimePlayerDefaults.attackCooldownMs,
-    attackRange: runtimePlayerDefaults.attackRange,
+    baseAttackCooldownMs: runtimePlayerDefaults.attackCooldownMs,
+    attackRange: runtimePlayerDefaults.attackRange * classStats.rangeMult,
+    baseAttackRange: runtimePlayerDefaults.attackRange * classStats.rangeMult,
+    hitRadius: runtimePlayerDefaults.hitRadius ?? PLAYER_DEFAULTS.hitRadius,
+    critChance: classStats.critChance ?? runtimePlayerDefaults.critChance ?? PLAYER_DEFAULTS.critChance,
+    damageTakenMult: classStats.damageTakenMult ?? 1,
+    skillDamageMult: classStats.skillDamageMult ?? 1,
     stats: {
-      hp: runtimePlayerDefaults.hp,
-      maxHp: runtimePlayerDefaults.maxHp,
-      mp: runtimePlayerDefaults.mp,
-      maxMp: runtimePlayerDefaults.maxMp,
-      speed: runtimePlayerDefaults.speed,
-      damage: runtimePlayerDefaults.attackDamage,
+      hp: classHp,
+      maxHp: classHp,
+      mp: classMp,
+      maxMp: classMp,
+      speed: runtimePlayerDefaults.speed * classStats.speedMult,
+      damage: Math.round(runtimePlayerDefaults.attackDamage * classStats.damageMult),
+      baseDamage: Math.round(runtimePlayerDefaults.attackDamage * classStats.damageMult),
     },
     skillCooldowns: {},
     sprite: playerSprite,
@@ -186,7 +200,7 @@ async function initGame(classId = 'warrior') {
   // ---- Init Game Systems ----
   progressionSystem = new ProgressionSystem(playerEntity, emitEvent);
   const inventorySystem = new InventorySystem(playerEntity, emitEvent);
-  const riftSystem = new RiftSystem(playerEntity, world, assets, camera, emitEvent, progressionSystem);
+  const riftSystem = new RiftSystem(playerEntity, world, assets, camera, emitEvent, progressionSystem, inventorySystem);
 
   // ---- Init UI ----
   const agentPanel = new AgentPanel(telemetry, abTesting, dataLog, progressionSystem);
@@ -230,6 +244,8 @@ async function initGame(classId = 'warrior') {
   // ---- Spawn Enemies ----
   function spawnEnemy(type, x, y) {
     const def = ENEMIES[type];
+    const playerLevel = progressionSystem?.level || 1;
+    const scaled = scaleEnemyStats(def, { playerLevel });
     const isShadowSlime = type === 'shadowBeast';
     const visual = createStatefulSprite(assets, isShadowSlime ? SLIME_ANIMATION_PROFILE : enemyAnimationProfile('heroHeavy'), {
       scale: isShadowSlime ? 2 : 1.05,
@@ -243,7 +259,11 @@ async function initGame(classId = 'warrior') {
       direction: 'S', isMoving: false, aiState: 'idle',
       patrolTimer: Math.random() * 3, lastAttack: 0,
       attackCooldownMs: def.attackCooldownMs, attackRange: def.attackRange,
-      stats: { hp: def.hp, maxHp: def.hp, damage: def.damage, speed: def.speed },
+      hitRadius: def.hitRadius,
+      level: playerLevel,
+      stats: { hp: scaled.hp, maxHp: scaled.hp, damage: scaled.damage, speed: scaled.speed },
+      xpReward: scaled.xpReward,
+      goldMult: scaled.goldMultiplier,
       sprite,
       animations: visual.animations,
       animationState: 'idle',
@@ -252,6 +272,12 @@ async function initGame(classId = 'warrior') {
 
     world.addEntity(entity);
     camera.container.addChild(sprite);
+    emitEvent(createEvent(EventType.ENEMY_SPAWN, entity.id, {
+      actorId: entity.id, actorType: 'enemy', enemyType: type,
+      enemyLevel: playerLevel, playerLevel, area: 'seed_garden',
+      hpAfter: scaled.hp, damage: scaled.damage,
+      position: { x, y }, scaling: scaled.multipliers,
+    }));
     return entity;
   }
 
@@ -267,12 +293,17 @@ async function initGame(classId = 'warrior') {
     const sx = screen.x + camera.container.x;
     const sy = screen.y + camera.container.y - 30;
     const drops = GOLD_DROPS[target.enemyType] || { min: 5, max: 15 };
-    const gold = drops.min + Math.floor(Math.random() * (drops.max - drops.min + 1));
-    progressionSystem.addGold(gold);
-    inventorySystem.gold = progressionSystem.gold;
+    const rolled = drops.min + Math.floor(Math.random() * (drops.max - drops.min + 1));
+    const gold = Math.round(rolled * (target.goldMult || 1));
+    // inventory.gold is canonical (shop spends from it); progression mirrors it
+    inventorySystem.gold += gold;
+    progressionSystem.gold = inventorySystem.gold;
     progressionSystem.addKill(target.enemyType);
-    progressionSystem.addXP(target.enemyType === 'riftKnight' ? 100 : 25, 'kill');
+    progressionSystem.addXP(target.xpReward ?? ENEMIES[target.enemyType]?.xpReward ?? 25, 'kill');
     showGoldDrop(sx, sy - 20, gold);
+    for (const drop of ITEM_DROPS[target.enemyType] || []) {
+      if (Math.random() < drop.chance) inventorySystem.addItem(drop.itemId);
+    }
 
     setTimeout(() => {
       if (target.sprite) target.sprite.alpha = 0;
@@ -352,6 +383,12 @@ async function initGame(classId = 'warrior') {
     }
     if (key === '2' && inventorySystem.hasItem('mana_potion')) {
       inventorySystem.useItem('mana_potion');
+    }
+    // Rift Shard — open the Rift from anywhere in the garden.
+    // Only consumed if entry succeeds (tier 2+ still needs a Rift Key).
+    if (key === '3' && inventorySystem.hasItem('rift_shard') && !riftSystem.inDungeon) {
+      riftSystem.enterRift();
+      if (riftSystem.inDungeon) inventorySystem.useItem('rift_shard');
     }
 
     // P — purchase UI
@@ -444,10 +481,10 @@ async function initGame(classId = 'warrior') {
       let minDist = Infinity;
       for (const e of world.query('isEnemy', 'pos', 'stats')) {
         if (e.stats.hp <= 0) continue;
-        const d = tileDistance(playerEntity.pos, e.pos);
+        const d = combatDistance(playerEntity, e);
         if (d < minDist) { minDist = d; nearest = e; }
       }
-      // Only auto-target if enemy is RIGHT next to player (1.5 tiles)
+      // Only auto-target if enemy is RIGHT next to player (edge-to-edge)
       if (nearest && minDist < 1.5) {
         playerEntity.attackTarget = nearest;
       }
@@ -457,8 +494,9 @@ async function initGame(classId = 'warrior') {
     if (playerEntity.attackTarget) {
       const target = playerEntity.attackTarget;
       if (target.stats.hp > 0) {
-        const dist = tileDistance(playerEntity.pos, target.pos);
-        if (dist <= playerEntity.attackRange) {
+        const dist = combatDistance(playerEntity, target);
+        const attackRange = getEffectiveAttackRange(playerEntity);
+        if (dist <= attackRange) {
           playerEntity.targetPos = null;
           playerEntity.path = [];
           const result = meleeAttack(playerEntity, target, emitEvent);
@@ -476,7 +514,7 @@ async function initGame(classId = 'warrior') {
           }
         }
         // If out of range, don't auto-walk — just clear target
-        else if (dist > playerEntity.attackRange + 1) {
+        else if (dist > attackRange + 1) {
           playerEntity.attackTarget = null;
         }
       } else {
@@ -646,6 +684,11 @@ async function initGame(classId = 'warrior') {
       moving: playerEntity.isMoving,
       attacking: Boolean(playerEntity.isAttacking),
       targetId: playerEntity.attackTarget?.id || null,
+      classId,
+      level: progressionSystem.level,
+      equippedWeaponId: playerEntity.equippedWeaponId || null,
+      basicAttackDamage: computeBaseDamage(playerEntity),
+      effectiveAttackRange: Number(getEffectiveAttackRange(playerEntity).toFixed(2)),
     },
     enemies: world.query('isEnemy', 'pos', 'stats').filter(enemy => enemy.stats.hp > 0).map(enemy => ({
       id: enemy.id,
@@ -659,7 +702,7 @@ async function initGame(classId = 'warrior') {
     progression: {
       kills: progressionSystem.kills,
       level: progressionSystem.level,
-      gold: progressionSystem.gold,
+      gold: inventorySystem.gold,
     },
     controls: 'WASD/arrows move; click enemy attacks; Q/E/R/T skills; F interact; Tab telemetry',
   });

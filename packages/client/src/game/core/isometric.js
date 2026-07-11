@@ -32,10 +32,12 @@ export function screenToTile(screenX, screenY) {
 }
 
 /**
- * Manhattan distance between two tile positions.
+ * Euclidean distance between two tile positions. Combat, AI, and proximity
+ * checks all share this metric so a given range means the same real distance
+ * in every direction (the old Manhattan metric inflated diagonals ~40%).
  */
 export function tileDistance(a, b) {
-  return Math.abs(a.x - b.x) + Math.abs(a.y - b.y);
+  return Math.hypot(a.x - b.x, a.y - b.y);
 }
 
 /**

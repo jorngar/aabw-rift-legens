@@ -82,3 +82,31 @@ test('keeps buffered telemetry while offline', () => {
   assert.equal(sdk.flush(), false);
   assert.equal(sdk.getSnapshot().eventsBuffered, 1);
 });
+
+test('normalizes balance and economy dimensions for Postgres telemetry', () => {
+  const sdk = new TelemetrySystem({ playerId: 'player-1', sessionId: 'session-1' });
+  const normalized = sdk.record({
+    type: EventType.ITEM_PURCHASE,
+    timestamp: 1,
+    actorId: 'player-entity',
+    actorType: 'player',
+    sourceType: 'shop',
+    sourceId: 'gunblade',
+    itemId: 'gunblade',
+    itemType: 'weapon',
+    classId: 'warrior',
+    playerLevel: 3,
+    weaponClass: 'martial',
+    unitPrice: 200,
+    goldBefore: 250,
+    goldAfter: 50,
+  });
+
+  assert.equal(normalized.schemaVersion, '1.1.0');
+  assert.equal(normalized.context.classId, 'warrior');
+  assert.equal(normalized.context.playerLevel, 3);
+  assert.equal(normalized.context.weaponClass, 'martial');
+  assert.equal(normalized.metrics.unitPrice, 200);
+  assert.equal(normalized.metrics.goldBefore, 250);
+  assert.equal(normalized.metrics.goldAfter, 50);
+});
