@@ -1,19 +1,31 @@
-// Patch v0.1 — Variant B (Branching)
-// Garden zone: wall bisector forces a detour. Shop upper-right,
-// portal lower-right. Enemies guard both branches.
+// Patch v0.1 — Variant B (Chambered Corridors)
+// Garden zone, 20x20. Walled chambers connected by narrow corridors
+// force players to weave through the map. Shop tucked into a side
+// pocket; portal at the north-east. Longer average path than A.
 //
-// Legend: # wall | . floor | S spawn | P portal | $ shop | E enemy
+// Legend: # wall | * rift crack (blocked) | ~ dirt path | . grass floor
+//         S spawn | P portal | $ shop | E enemy
 import { parseLayout } from '../../patch.js';
 
 export default parseLayout('garden', `
-##########
-#.......$#
-#.###....#
-#S.#E....#
-#..#.....#
-#..#####.#
-#.....E..#
-#........#
-#.......P#
-##########
+####################
+#S........#.......P#
+#.........#........#
+#.###.....#.....##.#
+#.#..E....#........#
+#.#.......###......#
+#.#................#
+#.#####.......E....#
+#........~~~~......#
+#........~..~......#
+#.......E~$.~......#
+#........~..~......#
+#........~~~~......#
+#..........#.......#
+#..###.....#....E..#
+#....*.....#####...#
+#....*.............#
+#....**............#
+#..................#
+####################
 `);

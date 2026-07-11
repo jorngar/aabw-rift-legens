@@ -2,7 +2,7 @@
 // Input Handler — class-aware, proper controls
 // ============================================================
 import { screenToTile } from '../core/isometric.js';
-import { TILE_TYPES } from '../core/tilemap.js';
+import { isBlocked } from '@rift-seed/shared/patch';
 import { SKILLS } from '@rift-seed/shared/config';
 
 /**
@@ -90,8 +90,7 @@ export function setupInput({ canvas, camera, player, world, emitEvent, useSkillF
       const rows = world.grid?.length || 0;
       const cols = world.grid?.[0]?.length || 0;
       const inBounds = tx >= 0 && ty >= 0 && tx < cols && ty < rows;
-      const tile = inBounds ? world.grid[ty][tx] : null;
-      if (!inBounds || tile === TILE_TYPES.WALL) return;
+      if (!inBounds || isBlocked(world.grid[ty][tx])) return;
       player.targetPos = { x: tx, y: ty };
       player.attackTarget = null;
     }

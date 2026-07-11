@@ -4,7 +4,8 @@
 import * as PIXI from 'pixi.js';
 import { loadRiftAssets } from './infrastructure/assets/rift-asset-loader.js';
 import { Camera, tileToScreen, tileDistance } from './game/core/isometric.js';
-import { renderTileMap, generateGardenMap, TILE_TYPES } from './game/core/tilemap.js';
+import { renderTileMap, generateGardenMap } from './game/core/tilemap.js';
+import { isBlocked } from '@rift-seed/shared/patch';
 import { World, createEntity } from './game/core/ecs.js';
 import { meleeAttack, combatTick, useSkill } from './game/core/combat.js';
 import { movementSystem, spriteSyncSystem, enemyAISystem, depthSortSystem, playerCombatSystem } from './game/systems/game-systems.js';
@@ -212,6 +213,16 @@ async function initGame(classId = 'warrior') {
   progressionSystem = new ProgressionSystem(playerEntity, emitEvent);
   const inventorySystem = new InventorySystem(playerEntity, emitEvent);
   const riftSystem = new RiftSystem(playerEntity, world, assets, camera, emitEvent, progressionSystem);
+  // Hand the A/B-assigned map bundle over so the rift renders the
+  // assigned dungeon variant instead of the procedural fallback.
+  if (abAssignment?.mapConfig) {
+    riftSystem.setVariantMaps(abAssignment.mapConfig);
+    // Move the garden's portal marker so the "Press F to enter Rift"
+    // prompt shows near the actual assigned portal tile.
+    if (abAssignment.mapConfig.garden?.portal) {
+      riftSystem.portalPos = { ...abAssignment.mapConfig.garden.portal };
+    }
+  }
 
   // ---- Init UI ----
   const agentPanel = new AgentPanel(telemetry, abTesting, dataLog, progressionSystem);
@@ -564,12 +575,12 @@ async function initGame(classId = 'warrior') {
       // independently for X and Y so the player can slide along a wall.
       const tileYSameX = Math.round(playerEntity.pos.y);
       const tileXNew   = Math.round(nx);
-      if (world.grid[tileYSameX]?.[tileXNew] !== TILE_TYPES.WALL) {
+      if (!isBlocked(world.grid[tileYSameX]?.[tileXNew])) {
         playerEntity.pos.x = nx;
       }
       const tileXSameY = Math.round(playerEntity.pos.x);
       const tileYNew   = Math.round(ny);
-      if (world.grid[tileYNew]?.[tileXSameY] !== TILE_TYPES.WALL) {
+      if (!isBlocked(world.grid[tileYNew]?.[tileXSameY])) {
         playerEntity.pos.y = ny;
       }
       playerEntity.isMoving = true;

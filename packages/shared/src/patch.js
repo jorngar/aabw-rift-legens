@@ -4,24 +4,41 @@
 // ============================================================
 
 /**
- * Tile-type integers stored in map.tiles[y][x].
- * WALL=5 matches the client renderer's TILE_TYPES.WALL palette entry
- * (packages/client/src/engine/tilemap.js). Server treats them as opaque.
+ * Tile-type integers stored in map.tiles[y][x]. Values are aligned with
+ * the client renderer's palette (packages/client/src/game/core/tilemap.js)
+ * so shared JSON blobs render correctly without translation.
  */
 export const TILE_TYPES = Object.freeze({
-  FLOOR: 0,   // renders as GRASS in the client palette
-  WALL:  5,   // renders as WALL in the client palette
+  FLOOR:      0,  // grass (garden) / stone floor (dungeon) — walkable
+  STONE:      1,  // walkable stone path
+  DIRT:       2,  // walkable dirt path (visually distinct hint)
+  RIFT_CRACK: 3,  // purple rift damage — BLOCKED
+  WATER:      4,  // BLOCKED
+  WALL:       5,  // solid wall — BLOCKED
 });
 
-// ASCII legend used by parseLayout(). Every marker cell is still walkable —
-// the marker just tells the parser what game entity lives there.
+/** Tile types the player cannot cross (used by pathfinding + WASD + click). */
+export const BLOCKED_TILES = Object.freeze(
+  new Set([TILE_TYPES.WALL, TILE_TYPES.RIFT_CRACK, TILE_TYPES.WATER])
+);
+
+/** True if the given tile type is impassable. */
+export function isBlocked(tileType) {
+  return BLOCKED_TILES.has(tileType);
+}
+
+// ASCII legend used by parseLayout(). Marker cells (S/P/$/E) render as the
+// underlying FLOOR — the marker only tells the parser what game entity lives
+// there. Impassable obstacles use `#` (wall) or `*` (rift crack).
 const CHAR_MAP = Object.freeze({
   '#': TILE_TYPES.WALL,
+  '*': TILE_TYPES.RIFT_CRACK,  // impassable rift-damaged obstacle
+  '~': TILE_TYPES.DIRT,        // walkable path hint
   '.': TILE_TYPES.FLOOR,
-  'S': TILE_TYPES.FLOOR,  // player spawn
-  'P': TILE_TYPES.FLOOR,  // portal (garden→dungeon) or exit/boss (dungeon)
-  '$': TILE_TYPES.FLOOR,  // shop terminal (garden only)
-  'E': TILE_TYPES.FLOOR,  // enemy spawn
+  'S': TILE_TYPES.FLOOR,       // player spawn
+  'P': TILE_TYPES.FLOOR,       // portal (garden→dungeon) or exit/boss (dungeon)
+  '$': TILE_TYPES.FLOOR,       // shop terminal (garden only)
+  'E': TILE_TYPES.FLOOR,       // enemy spawn
 });
 
 /**

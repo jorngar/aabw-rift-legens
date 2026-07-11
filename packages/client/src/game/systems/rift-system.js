@@ -5,6 +5,7 @@ import { EventType, createEvent } from '@rift-seed/shared/events';
 import { RIFT_WAVES, ENEMIES } from '@rift-seed/shared/config';
 import { tileDistance, tileToScreen } from '../core/isometric.js';
 import { generateDungeonMap, renderTileMap } from '../core/tilemap.js';
+import { isBlocked } from '@rift-seed/shared/patch';
 import { createEntity } from '../core/ecs.js';
 import { createStatefulSprite, enemyAnimationProfile, SLIME_ANIMATION_PROFILE } from './animation-system.js';
 
@@ -29,11 +30,24 @@ export class RiftSystem {
     this._originalGrid = null;
     this._promptEl = null;
     this._tileContainer = null;
+
+    /** Optional per-variant maps from PATCHES (set after A/B handshake). */
+    this._variantGarden = null;
+    this._variantDungeon = null;
   }
 
   /** Store reference to the tile container for rebuilding */
   setTileContainer(container) {
     this._tileContainer = container;
+  }
+
+  /**
+   * Wire the A/B-assigned map bundle so enter/exit uses the assigned
+   * variant instead of the legacy procedural generator.
+   */
+  setVariantMaps({ garden, dungeon } = {}) {
+    if (garden)  this._variantGarden  = garden;
+    if (dungeon) this._variantDungeon = dungeon;
   }
 
   update(dt) {
@@ -65,10 +79,11 @@ export class RiftSystem {
     if (this._promptEl) { this._promptEl.remove(); this._promptEl = null; }
     this.showPrompt = false;
 
-    // Generate dungeon
-    const dungeon = generateDungeonMap(12, 12);
+    // Prefer the A/B-assigned dungeon map; fall back to procedural.
+    const grid = this._variantDungeon?.tiles || generateDungeonMap(12, 12).grid;
+    const spawn = this._variantDungeon?.spawn || { x: 2, y: 2 };
     this._originalGrid = this.world.grid;
-    this.world.grid = dungeon.grid;
+    this.world.grid = grid;
 
     // Clear enemies
     for (const e of this.world.query('isEnemy')) {
@@ -77,10 +92,10 @@ export class RiftSystem {
     }
 
     // Rebuild tilemap
-    this._rebuildTilemap(dungeon.grid);
+    this._rebuildTilemap(grid);
 
-    // Move player
-    this.player.pos = { x: 2, y: 2 };
+    // Move player to the variant's spawn
+    this.player.pos = { x: spawn.x, y: spawn.y };
     this.player.targetPos = null;
     this.player.path = null;
     this.player.attackTarget = null;
@@ -107,9 +122,17 @@ export class RiftSystem {
 
     setTimeout(() => {
       if (!this.inDungeon) return;
+      const grid = this.world.grid;
+      const cols = grid[0]?.length || 12;
+      const rows = grid.length || 12;
       for (let i = 0; i < wave.count; i++) {
-        const x = 3 + Math.floor(Math.random() * 6);
-        const y = 3 + Math.floor(Math.random() * 6);
+        // Reject spawns on walls / rift cracks; give up after a few tries.
+        let x = 0, y = 0;
+        for (let attempt = 0; attempt < 8; attempt++) {
+          x = 2 + Math.floor(Math.random() * Math.max(1, cols - 4));
+          y = 2 + Math.floor(Math.random() * Math.max(1, rows - 4));
+          if (!isBlocked(grid[y]?.[x])) break;
+        }
         this._spawnEnemy(wave.type, x, y);
       }
     }, (wave.delay || 2) * 1000);
@@ -179,7 +202,9 @@ export class RiftSystem {
       this._rebuildTilemap(this._originalGrid);
     }
 
-    this.player.pos = { x: 8, y: 8 };
+    // Return to the assigned garden's spawn if available, else legacy 8,8.
+    const spawn = this._variantGarden?.spawn || { x: 8, y: 8 };
+    this.player.pos = { x: spawn.x, y: spawn.y };
     this.player.targetPos = null;
     this.player.path = null;
     this.player.stats.hp = this.player.stats.maxHp;
