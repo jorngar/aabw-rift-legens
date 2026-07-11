@@ -156,6 +156,7 @@ async function initGame(classId = 'warrior') {
 
   app.stage.addChild(camera.container);
 
+
   // Snap camera to the assigned spawn (or legacy 8,8 fallback).
   const spawnTile = gardenMap?.spawn || { x: 8, y: 8 };
   const startScreen = tileToScreen(spawnTile.x, spawnTile.y);
@@ -167,7 +168,7 @@ async function initGame(classId = 'warrior') {
   // ---- Create Player — explicit idle / move / attack states ----
   const playerVisual = createStatefulSprite(assets, playerAnimationProfile(classId), {
     scale: 2.2,
-    anchorY: 0.65,
+    anchorY: 0.60,
   });
   const playerSprite = playerVisual.sprite;
 
@@ -676,7 +677,7 @@ async function initGame(classId = 'warrior') {
     // Only the black drop shadow is drawn now; glow + class-tint overlays
     // were removed so the visible footprint matches the tile hitbox.
     playerShadow.style.left = `${playerScreen.x + camera.container.x - 20}px`;
-    playerShadow.style.top = `${playerScreen.y + camera.container.y + 15}px`;
+    playerShadow.style.top = `${playerScreen.y + camera.container.y - 10}px`;
 
     // Update lighting
     lighting.update(playerScreen.x, playerScreen.y);
