@@ -42,19 +42,16 @@ Hermes proposes a retention hypothesis; it does not claim causality from a singl
 # Install dependencies
 pnpm install
 
-# Start and migrate Postgres telemetry storage
-docker compose up -d postgres
-pnpm --filter @rift-seed/server migrate
+# Recommended: starts healthy Postgres, backend, and client
+pnpm start
 
-# Start client (Vite dev server on :5173)
-pnpm dev
-
-# Start server (Express + WebSocket on :3001)
-pnpm dev:server
-
-# Start both concurrently
+# Equivalent development command
 pnpm dev:all
 ```
+
+`pnpm start`, `pnpm dev:all`, and `pnpm dev:server` start Docker Postgres and wait for its health check before the backend launches. Use `pnpm db:status` to inspect it and `pnpm db:stop` when finished.
+
+For isolated processes, `pnpm dev` starts only the Vite client, while `pnpm dev:server` starts Postgres and the Express/WebSocket backend. Schema migration and game-catalog seeding run idempotently during backend startup; `pnpm --filter @rift-seed/server migrate` remains available for CI or manual migration checks.
 
 Hermes must be available on `PATH`:
 

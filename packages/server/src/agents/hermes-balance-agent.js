@@ -25,10 +25,10 @@ const PATCH_LIMITS = Object.freeze({
   'player.base_damage': [5, 100],
   'player.attack_cooldown': [200, 2000],
   'enemy.shadow_beast.hp': [25, 1000],
-  'enemy.shadow_beast.damage': [1, 100],
+  'enemy.shadow_beast.damage': [16, 100],
   'enemy.shadow_beast.speed': [0.5, 6],
   'enemy.rift_knight.hp': [100, 2500],
-  'enemy.rift_knight.damage': [1, 150],
+  'enemy.rift_knight.damage': [32, 150],
   'enemy.rift_knight.speed': [0.5, 6],
   'skill.shadow_strike.damage': [5, 250],
   'skill.shadow_strike.mana_cost': [0, 100],
@@ -138,11 +138,12 @@ allowed_changes=${JSON.stringify(allowed)}`;
 }
 
 export class HermesBalanceAgent {
-  constructor({ telemetryAgent, hermesBinary = process.env.HERMES_BIN || 'hermes', execute = null, timeoutMs = Number(process.env.HERMES_TIMEOUT_MS) || 240000, balanceStore = null } = {}) {
+  constructor({ telemetryAgent, evidenceLoader = null, hermesBinary = process.env.HERMES_BIN || 'hermes', execute = null, timeoutMs = Number(process.env.HERMES_TIMEOUT_MS) || 240000, balanceStore = null } = {}) {
     this.telemetryAgent = telemetryAgent;
     this.hermesBinary = resolveHermesBinary(hermesBinary);
     this.execute = execute || ((prompt) => runHermes(this.hermesBinary, prompt, timeoutMs));
     this.timeoutMs = timeoutMs;
+    this.evidenceLoader = evidenceLoader;
     this.balanceStore = balanceStore || {
       getAll: () => getAllBalance(),
       get: key => getBalance(key),
@@ -152,16 +153,53 @@ export class HermesBalanceAgent {
     this.running = false;
     this.lastError = null;
     this.lastRunAt = null;
+    this.lastEvidenceSource = null;
+    this.lastHydrationError = null;
+  }
+
+  /**
+   * Resolve telemetry evidence from the best available source: in-memory
+   * SDK stream first, then rehydration of persisted gameplay events from
+   * Postgres, then the SQLite match-history fallback. Shared by analyze()
+   * and the SOP runners so every consumer sees the same evidence.
+   */
+  async ensureEvidence(patchId = null) {
+    let evidence = this.telemetryAgent?.getEvidence(patchId);
+    this.lastEvidenceSource = evidence ? 'memory' : null;
+
+    if (!evidence && this.evidenceLoader) {
+      try {
+        const persistedEvents = await this.evidenceLoader(patchId);
+        if (persistedEvents?.length) {
+          this.telemetryAgent?.ingest(persistedEvents);
+          evidence = this.telemetryAgent?.getEvidence(patchId);
+          this.lastEvidenceSource = evidence ? 'postgres' : null;
+        }
+      } catch (error) {
+        this.lastHydrationError = error.message;
+      }
+    }
+
+    if (!evidence) {
+      evidence = this.telemetryAgent?.getHistoricalEvidence?.(patchId);
+      if (evidence) this.lastEvidenceSource = 'match_history';
+    }
+    return evidence || null;
   }
 
   async analyze({ patchId = null } = {}) {
     if (this.running) throw new Error('Hermes analysis is already running');
-    const evidence = this.telemetryAgent?.getEvidence(patchId);
-    if (!evidence) throw new Error('No telemetry evidence is available yet');
     this.running = true;
     this.lastError = null;
+    this.lastHydrationError = null;
     this.lastRunAt = Date.now();
     try {
+      const evidence = await this.ensureEvidence(patchId);
+      if (!evidence) {
+        const detail = this.lastHydrationError ? ` Postgres hydration failed: ${this.lastHydrationError}` : '';
+        throw new Error(`No telemetry evidence is available yet. Play a session or verify the database.${detail}`);
+      }
+
       const balance = this.balanceStore.getAll();
       const output = await this.execute(buildPrompt(evidence, balance));
       const raw = parseJsonResponse(output);
@@ -253,6 +291,8 @@ export class HermesBalanceAgent {
       binary: this.hermesBinary,
       lastRunAt: this.lastRunAt,
       lastError: this.lastError,
+      evidenceSource: this.lastEvidenceSource,
+      hydrationError: this.lastHydrationError,
       latestProposal: this.proposals.at(-1) || null,
       proposals: this.proposals.slice(-10).reverse(),
     };

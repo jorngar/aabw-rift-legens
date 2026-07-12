@@ -51,8 +51,10 @@ function inCone(attacker, target) {
  */
 function getDamageBuff(attacker) {
   const effects = activeEffects.get(attacker.id) || [];
-  const dmgBuff = effects.find(e => e.type === 'damage_buff');
-  return dmgBuff?.amount || 0;
+  const now = Date.now();
+  return Math.min(1, effects
+    .filter(effect => effect.type === 'damage_buff' && effect.expires > now)
+    .reduce((total, effect) => total + (Number(effect.amount) || 0), 0));
 }
 
 export function computeBaseDamage(attacker) {
@@ -126,6 +128,8 @@ export function meleeAttack(attacker, target, emitEvent) {
   const damageTaken = damageResult.damageTaken;
   const actorType = getEntityType(attacker);
   const targetType = getEntityType(target);
+  const playerActor = actorType === 'player' ? attacker : targetType === 'player' ? target : null;
+  const enemyActor = actorType === 'enemy' ? attacker : targetType === 'enemy' ? target : null;
   const sourceId = attacker.equippedWeaponId || attacker.weaponId || 'basic_attack';
   const weaponContribution = getWeaponContribution({
     classId: attacker.classId,
@@ -139,7 +143,8 @@ export function meleeAttack(attacker, target, emitEvent) {
     sourceType: actorType === 'player' ? 'weapon' : 'enemy', sourceId,
     enemyType: attacker.enemyType,
     damage: damageTaken, isCritical: isCrit, hpBefore, hpAfter: target.stats.hp,
-    classId: attacker.classId, playerLevel: attacker.level,
+    classId: playerActor?.classId, playerLevel: playerActor?.level,
+    enemyLevel: enemyActor?.level,
     weaponClass: weaponContribution.weaponClass,
     weaponDamage: weaponContribution.damage,
     weaponAffinity: weaponContribution.affinity,
@@ -152,6 +157,7 @@ export function meleeAttack(attacker, target, emitEvent) {
       sourceType: 'enemy', sourceId: attacker.enemyType || attacker.name || String(attacker.id),
       enemyType: attacker.enemyType || 'unknown', attackerId: attacker.id,
       damage: damageTaken, hpBefore, hpAfter: target.stats.hp,
+      classId: target.classId, playerLevel: target.level, enemyLevel: attacker.level,
     }));
   }
 
@@ -177,6 +183,23 @@ export function useSkill(attacker, skillId, target, targetPos, emitEvent, world)
   let mp = attacker.stats?.mp ?? attacker.mp ?? 0;
   if (mp < skill.manaCost) return { success: false, result: { reason: 'no_mana' } };
 
+  // Validate before committing mana and cooldown. Invalid casts used to consume
+  // both resources even though no action could occur.
+  if (skill.damage > 0 && skill.type === 'single') {
+    if (!target || (target.stats?.hp ?? 0) <= 0) {
+      return { success: false, result: { reason: 'no_target' } };
+    }
+    if (combatDistance(attacker, target) > skill.range) {
+      return { success: false, result: { reason: 'out_of_range' } };
+    }
+  }
+  if (skill.type === 'cone' && !world) {
+    return { success: false, result: { reason: 'missing_world' } };
+  }
+  if (skill.type === 'self' && skill.healAmount && attacker.stats?.hp >= attacker.stats?.maxHp) {
+    return { success: false, result: { reason: 'full_health' } };
+  }
+
   // Deduct mana
   const mpBefore = mp;
   if (attacker.stats) attacker.stats.mp -= skill.manaCost;
@@ -192,73 +215,71 @@ export function useSkill(attacker, skillId, target, targetPos, emitEvent, world)
     skillId, cooldownMs: skill.cooldownMs, manaCost: skill.manaCost,
     targetId: target?.id, targetType: target ? getEntityType(target) : 'none', targetPos,
     mpBefore, mpAfter,
+    classId: attacker.classId, playerLevel: attacker.level,
   }));
   emitEvent(createEvent(EventType.RESOURCE_CHANGE, attacker.id, {
     actorId: attacker.id, actorType: getEntityType(attacker), sourceType: 'skill', sourceId: skillId,
     resource: 'mp', delta: mpAfter - mpBefore, mpBefore, mpAfter,
+    classId: attacker.classId, playerLevel: attacker.level,
   }));
 
   let result = {};
 
   // ===== DAMAGE SKILLS =====
   if (skill.damage > 0 && skill.type === 'single') {
-    if (target) {
-      const dist = combatDistance(attacker, target);
-      if (dist <= skill.range) {
-        const dmg = computeSkillDamage(attacker, skill);
-        const hpBefore = target.stats?.hp ?? 0;
-        const damageResult = resolveDamage(target, dmg);
-        const killed = damageResult.killed;
-        result = { hit: true, damage: damageResult.damageTaken, killed };
+    const dmg = computeSkillDamage(attacker, skill);
+    const hpBefore = target.stats?.hp ?? 0;
+    const damageResult = resolveDamage(target, dmg);
+    const killed = damageResult.killed;
+    result = { hit: true, damage: damageResult.damageTaken, killed };
 
-        emitEvent(createEvent(EventType.SKILL_HIT, attacker.id, {
-          actorId: attacker.id, actorType: getEntityType(attacker), sourceType: 'skill', sourceId: skillId,
-          skillId, targetId: target.id, targetType: getEntityType(target), targetEnemyType: target.enemyType,
-          damage: damageResult.damageTaken, hpBefore, hpAfter: target.stats.hp, targetHpRemaining: target.stats.hp,
-          classId: attacker.classId, playerLevel: attacker.level,
-        }));
+    emitEvent(createEvent(EventType.SKILL_HIT, attacker.id, {
+      actorId: attacker.id, actorType: getEntityType(attacker), sourceType: 'skill', sourceId: skillId,
+      skillId, targetId: target.id, targetType: getEntityType(target), targetEnemyType: target.enemyType,
+      damage: damageResult.damageTaken, hpBefore, hpAfter: target.stats.hp, targetHpRemaining: target.stats.hp,
+      classId: attacker.classId, playerLevel: attacker.level,
+    }));
 
-        // === ICE SHARD: Slow target ===
-        if (skill.slow && skill.slowDuration) {
-          addEffect(target.id, {
-            type: 'slow',
-            amount: skill.slow,
-            expires: now + skill.slowDuration,
-            originalSpeed: target.stats?.speed || 2,
-          });
-          if (target.stats) target.stats.speed *= (1 - skill.slow);
-          result.effect = 'slow';
-        }
+    // === ICE SHARD: Slow target ===
+    if (skill.slow && skill.slowDuration) {
+      const alreadySlowed = hasEffect(target.id, 'slow');
+      addEffect(target.id, {
+        type: 'slow',
+        sourceId: skillId,
+        amount: skill.slow,
+        expires: now + skill.slowDuration,
+        originalSpeed: alreadySlowed ? null : (target.stats?.speed || 2),
+      });
+      if (target.stats && !alreadySlowed) target.stats.speed *= (1 - skill.slow);
+      result.effect = 'slow';
+    }
 
-        // === POISON DAGGER: DOT ===
-        if (skill.dot && skill.dotDuration) {
-          addEffect(target.id, {
-            type: 'dot',
-            damagePerTick: skill.dot,
-            tickInterval: 1000,
-            expires: now + skill.dotDuration,
-            lastTick: now,
-            sourceId: attacker.id,
-          });
-          result.effect = 'poison';
-        }
+    // === POISON DAGGER: DOT ===
+    if (skill.dot && skill.dotDuration) {
+      addEffect(target.id, {
+        type: 'dot',
+        sourceId: `${attacker.id}:${skillId}`,
+        damagePerTick: skill.dot,
+        tickInterval: 1000,
+        expires: now + skill.dotDuration,
+        lastTick: now,
+      });
+      result.effect = 'poison';
+    }
 
-        // === SHIELD BASH: Stun ===
-        if (skill.stun) {
-          addEffect(target.id, {
-            type: 'stun',
-            expires: now + skill.stun,
-          });
-          target.aiState = 'stunned';
-          result.effect = 'stun';
-        }
+    // === SHIELD BASH: Stun ===
+    if (skill.stun) {
+      addEffect(target.id, {
+        type: 'stun',
+        sourceId: skillId,
+        expires: now + skill.stun,
+      });
+      target.aiState = 'stunned';
+      result.effect = 'stun';
+    }
 
-        if (killed) {
-          emitCombatOutcome(attacker, target, skillId, emitEvent, 'skill');
-        }
-      } else {
-        result = { hit: false, reason: 'out_of_range' };
-      }
+    if (killed) {
+      emitCombatOutcome(attacker, target, skillId, emitEvent, 'skill');
     }
   }
 
@@ -297,6 +318,7 @@ export function useSkill(attacker, skillId, target, targetPos, emitEvent, world)
     emitEvent(createEvent(EventType.RESOURCE_CHANGE, attacker.id, {
       actorId: attacker.id, actorType: getEntityType(attacker), sourceType: 'skill', sourceId: skillId,
       resource: 'hp', delta: healed, hpBefore, hpAfter: healTarget.stats.hp,
+      classId: attacker.classId, playerLevel: attacker.level,
     }));
   }
 
@@ -304,6 +326,7 @@ export function useSkill(attacker, skillId, target, targetPos, emitEvent, world)
   else if (skill.type === 'self' && skill.buffDamage) {
     addEffect(attacker.id, {
       type: 'damage_buff',
+      sourceId: skillId,
       amount: skill.buffDamage,
       expires: now + (skill.buffDuration || 5000),
     });
@@ -351,6 +374,9 @@ function emitCombatOutcome(attacker, victim, sourceId, emitEvent, sourceType = n
     enemyType: victim.enemyType,
     sourceType: sourceType || (killerType === 'player' ? 'weapon' : 'enemy'),
     sourceId,
+    classId: killerType === 'player' ? attacker.classId : victimType === 'player' ? victim.classId : null,
+    playerLevel: killerType === 'player' ? attacker.level : victimType === 'player' ? victim.level : null,
+    enemyLevel: killerType === 'enemy' ? attacker.level : victimType === 'enemy' ? victim.level : null,
   };
   if (killerType === 'player' && victimType === 'enemy') {
     emitEvent(createEvent(EventType.KILL, attacker.id, payload));
@@ -387,8 +413,11 @@ export function applyEffect(entityId, effect) {
  */
 function addEffect(entityId, effect) {
   if (!activeEffects.has(entityId)) activeEffects.set(entityId, []);
-  // Remove existing effect of same type
-  const effects = activeEffects.get(entityId).filter(e => e.type !== effect.type);
+  // Refresh the same source, but allow separate buffs (scroll + class skill)
+  // and separate damage-over-time sources to coexist.
+  const effectKey = effect.sourceId || effect.type;
+  const effects = activeEffects.get(entityId)
+    .filter(existing => (existing.sourceId || existing.type) !== effectKey);
   effects.push(effect);
   activeEffects.set(entityId, effects);
 }
@@ -451,5 +480,6 @@ export function combatTick(entity, dt) {
  */
 export function hasEffect(entityId, effectType) {
   const effects = activeEffects.get(entityId);
-  return effects?.some(e => e.type === effectType) || false;
+  const now = Date.now();
+  return effects?.some(e => e.type === effectType && e.expires > now) || false;
 }

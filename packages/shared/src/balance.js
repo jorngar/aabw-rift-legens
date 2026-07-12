@@ -102,7 +102,7 @@ export function scaleEnemyStats(enemy, context = {}) {
 
   return {
     hp: Math.max(1, Math.round(enemy.hp * hpMultiplier)),
-    damage: Math.max(1, Math.round(enemy.damage * damageMultiplier)),
+    damage: Math.max(1, Math.round(Math.max(enemy.damage, enemy.damageFloor || 1) * damageMultiplier)),
     speed: Number((enemy.speed * speedMultiplier).toFixed(2)),
     xpReward: Math.max(1, Math.round(enemy.xpReward * rewardMultiplier)),
     goldMultiplier: Number(rewardMultiplier.toFixed(3)),

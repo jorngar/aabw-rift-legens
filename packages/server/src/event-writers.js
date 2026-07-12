@@ -6,7 +6,7 @@
 // ============================================================
 import {
   insertEventBatch, insertPurchase, insertDefect, insertDeath,
-  insertTrajectoryBatch, insertEngagement,
+  insertTrajectoryBatch, insertEngagement, insertGameplayEventBatch,
 } from './db/repositories.js';
 
 // Events routed into the `defects` table with defect_type = event.type.
@@ -42,10 +42,15 @@ export async function fanOut({ sessionId, patchId, variant, events }) {
     // take down the whole ingest.
     if (!e || typeof e !== 'object' || !e.type) continue;
     const p = payloadOf(e);
-    const x = p.x ?? e.x ?? null;
-    const y = p.y ?? e.y ?? null;
+    const metrics = e.metrics || {};
+    const context = e.context || {};
+    const source = e.source || {};
+    const target = e.target || {};
+    const actor = e.actor || {};
+    const x = p.x ?? e.x ?? e.position?.x ?? null;
+    const y = p.y ?? e.y ?? e.position?.y ?? null;
 
-    raw.push({ sessionId, eventType: e.type, payload: p, x, y });
+    raw.push({ sessionId, eventType: e.type, payload: e, x, y });
 
     switch (e.type) {
       case 'trajectory:sample':
@@ -59,30 +64,32 @@ export async function fanOut({ sessionId, patchId, variant, events }) {
         });
         break;
       case 'item:purchase':
-        if (p.itemId) {
+        {
+          const itemId = p.itemId ?? source.id;
+          if (!itemId) break;
           purchases.push({
             sessionId, patchId, variant,
-            itemId: p.itemId,
-            price: p.price ?? 0,
-            goldBefore: p.goldBefore ?? null,
-            goldAfter: p.goldAfter ?? null,
+            itemId,
+            price: p.price ?? p.unitPrice ?? metrics.unitPrice ?? 0,
+            goldBefore: p.goldBefore ?? metrics.goldBefore ?? null,
+            goldAfter: p.goldAfter ?? metrics.goldAfter ?? null,
           });
         }
         break;
       case 'death':
         deaths.push({
           sessionId, patchId, variant,
-          killedBy: p.killedBy || p.attackerId || null,
+          killedBy: p.killedBy || p.attackerId || source.id || actor.id || null,
           x: x ?? 0, y: y ?? 0,
-          mapZone: p.mapZone || null,
+          mapZone: p.mapZone || context.mapZone || context.area || null,
         });
         break;
       case 'combat:engaged':
         engagements.push({
           sessionId, patchId, variant,
-          enemyType: p.enemyType || 'unknown',
-          damageDealt: p.damageDealt ?? null,
-          damageTaken: p.damageTaken ?? null,
+          enemyType: p.enemyType || target.enemyType || 'unknown',
+          damageDealt: p.damageDealt ?? metrics.damageDealt ?? null,
+          damageTaken: p.damageTaken ?? metrics.damageTaken ?? null,
           killed: p.killed ?? null,
           x, y,
         });
@@ -99,7 +106,10 @@ export async function fanOut({ sessionId, patchId, variant, events }) {
     }
   }
 
-  const tasks = [insertEventBatch(raw)];
+  const tasks = [
+    insertEventBatch(raw),
+    insertGameplayEventBatch(events, { sessionId, patchId }),
+  ];
   if (trajRows.length) tasks.push(insertTrajectoryBatch(trajRows));
   for (const row of purchases)   tasks.push(insertPurchase(row));
   for (const row of defects)     tasks.push(insertDefect(row));

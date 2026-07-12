@@ -57,7 +57,15 @@ export class TrajectorySampler {
     this.emit({
       type: EventType.TRAJECTORY_SAMPLE,
       playerId: this.playerId,
-      payload: { x: pos.x, y: pos.y, vx, vy, mapZone: this.getZone() },
+      payload: {
+        x: pos.x,
+        y: pos.y,
+        vx,
+        vy,
+        mapZone: this.getZone(),
+        classId: this.player.classId || null,
+        playerLevel: this.player.level ?? null,
+      },
     });
     this._prevX = pos.x; this._prevY = pos.y; this._prevT = now;
   }

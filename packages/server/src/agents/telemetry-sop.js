@@ -56,13 +56,20 @@ export class TelemetrySOP {
   }
 
   /**
-   * Kick off a full SOP run. Validates that evidence exists synchronously,
-   * then executes the phases in the background. Returns the run skeleton.
+   * Kick off a full SOP run. Validates that evidence exists (hydrating the
+   * SDK source from Postgres when the in-memory stream is empty), then
+   * executes the phases in the background. Returns the run skeleton.
    */
-  start({ source = 'sdk', patchId = null, autoDeploy = true } = {}) {
-    if (this.running) throw new Error('An SOP run is already in progress');
-    const resolved = this._resolveSource(source);
-    const evidence = this._buildEvidence(resolved.id, patchId);
+  async start({ source = 'sdk', patchId = null, autoDeploy = true } = {}) {
+    if (this.running || this._starting) throw new Error('An SOP run is already in progress');
+    this._starting = true;
+    let resolved, evidence;
+    try {
+      resolved = this._resolveSource(source);
+      evidence = await this._buildEvidence(resolved.id, patchId);
+    } finally {
+      this._starting = false;
+    }
 
     const run = {
       id: `sop_${randomUUID().slice(0, 8)}`,
@@ -92,7 +99,8 @@ export class TelemetrySOP {
       availableSources: this.getAvailableSources(),
       currentRun: this.currentRun,
       history: this.history.slice(-5).reverse(),
-      persistedRuns: getSOPRuns(5),
+      // The sop_runs table is shared with the A/B SOP; only show this agent's runs.
+      persistedRuns: getSOPRuns(20).filter(r => (r?.agent || 'telemetry') === 'telemetry').slice(0, 5),
     };
   }
 
@@ -107,21 +115,33 @@ export class TelemetrySOP {
     return source;
   }
 
-  /** Build the primary evidence object for the resolved data source. */
-  _buildEvidence(sourceId, patchId = null) {
+  /**
+   * Build the primary evidence object for the resolved data source.
+   * The 'sdk' source falls back to rehydrating persisted gameplay events
+   * from Postgres (via the Hermes agent) when the in-memory stream is
+   * empty — e.g. right after a server restart.
+   */
+  async _buildEvidence(sourceId, patchId = null) {
     if (sourceId === 'sdk') {
-      const evidence = this.telemetryAgent?.getEvidence(patchId);
+      const evidence = await this._sdkEvidence(patchId);
       if (!evidence) throw new Error("Data source 'sdk' has no telemetry evidence yet — play a session first");
       return evidence;
     }
     if (sourceId === 'matches') return this._matchEvidence();
     // 'all' — combine whatever is available.
-    const sdk = this.telemetryAgent?.getEvidence(patchId);
+    const sdk = await this._sdkEvidence(patchId);
     let matches = null;
     try { matches = this._matchEvidence(); } catch { /* empty table is fine here */ }
     if (!sdk && !matches) throw new Error('No data is available in any source — play a session first');
     if (sdk && matches) return { ...sdk, matchHistorySummary: matches };
     return sdk || matches;
+  }
+
+  async _sdkEvidence(patchId = null) {
+    const live = this.telemetryAgent?.getEvidence(patchId);
+    if (live) return live;
+    if (this.hermesAgent?.ensureEvidence) return this.hermesAgent.ensureEvidence(patchId);
+    return null;
   }
 
   /** Evidence built from the persisted match_history table instead of the live SDK stream. */
@@ -188,12 +208,15 @@ export class TelemetrySOP {
     return DATA_SOURCES.map(s => {
       const base = { id: s.id, name: s.name, description: s.description };
       if (s.id === 'sdk') {
+        const canHydrate = Boolean(this.hermesAgent?.evidenceLoader);
         return {
           ...base,
-          ready: Boolean(sdkEvidence),
+          ready: Boolean(sdkEvidence) || canHydrate,
           detail: sdkEvidence
             ? `${sdkEvidence.sample.events} events / ${sdkEvidence.sample.sessions} sessions (patch ${sdkEvidence.patchId})`
-            : 'no events yet — play a session',
+            : canHydrate
+              ? 'no live events this server session — will rehydrate persisted gameplay events from Postgres on run'
+              : 'no events yet — play a session',
         };
       }
       if (s.id === 'matches') {

@@ -63,6 +63,34 @@ export const CLASS_STATS = Object.freeze({
   },
 });
 
+/** Canonical class identity and loadouts used by the client and both databases. */
+export const PLAYER_CLASSES = Object.freeze({
+  warrior: {
+    id: 'warrior', name: 'WARRIOR', color: '#ff6b35',
+    description: 'Melee fighter with high HP and defense',
+    passive: 'Thick Skin: -10% damage taken',
+    skills: ['shadowStrike', 'riftSlash', 'shieldBash', 'warCry'],
+  },
+  mage: {
+    id: 'mage', name: 'MAGE', color: '#4a9eff',
+    description: 'Ranged caster with high MP and skill damage',
+    passive: 'Arcane Overflow: +20% skill damage',
+    skills: ['fireball', 'iceShard', 'heal', 'riftTeleport'],
+  },
+  rogue: {
+    id: 'rogue', name: 'ROGUE', color: '#44ff44',
+    description: 'Fast attacker with critical hits',
+    passive: 'Backstab: 25% critical chance',
+    skills: ['poisonDagger', 'shadowStrike', 'dash', 'heal'],
+  },
+  ranger: {
+    id: 'ranger', name: 'RANGER', color: '#f59e0b',
+    description: 'Ranged attacker with superior reach',
+    passive: 'Eagle Eye: +20% attack range',
+    skills: ['arrowShot', 'riftSlash', 'summonWolf', 'heal'],
+  },
+});
+
 /** Enemy definitions */
 export const ENEMIES = Object.freeze({
   shadowBeast: {
@@ -70,7 +98,8 @@ export const ENEMIES = Object.freeze({
     // creature honestly in the game UI.
     name: 'Rift Slime',
     hp: 200,
-    damage: 3,
+    damage: 16,
+    damageFloor: 16,
     speed: 1.5,
     aggroRange: 4,
     attackRange: 1.2,
@@ -82,7 +111,8 @@ export const ENEMIES = Object.freeze({
   riftKnight: {
     name: 'Rift Knight',
     hp: 500,
-    damage: 8,
+    damage: 32,
+    damageFloor: 32,
     speed: 1.0,
     aggroRange: 5,
     attackRange: 1.5,
@@ -237,14 +267,16 @@ export const SKILLS = Object.freeze({
   },
   summonWolf: {
     id: 'summonWolf',
-    name: 'Summon Wolf',
+    name: 'Spirit Wolf',
     damage: 0,
     manaCost: 30,
-    cooldownMs: 15000,
+    cooldownMs: 12000,
     range: 0,
     type: 'self',
     icon: '🐺',
-    desc: 'Summon wolf companion for 10s',
+    desc: 'Call a spirit wolf, gaining +25% damage for 10s',
+    buffDamage: 0.25,
+    buffDuration: 10000,
   },
 });
 

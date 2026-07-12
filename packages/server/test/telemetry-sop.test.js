@@ -31,7 +31,7 @@ const proposeReply = JSON.stringify({
     expectedImpact: 'Fewer deaths',
     confidence: 0.5,
     changes: [
-      { key: 'enemy.shadow_beast.damage', proposedValue: 9, reason: 'Deaths exceed kills', evidence: ['killDeathRatio=0.25'] },
+      { key: 'enemy.shadow_beast.damage', proposedValue: 18, reason: 'Deaths exceed kills', evidence: ['killDeathRatio=0.25'] },
       { key: 'not.a.real.key', proposedValue: 1, reason: 'should be rejected', evidence: [] },
     ],
   },
@@ -47,7 +47,7 @@ const dataSourceReply = JSON.stringify({
 });
 
 function harness({ replies, autoDeploy = true } = {}) {
-  const values = { 'enemy.shadow_beast.damage': 10, 'skill.shadow_strike.cooldown': 3000 };
+  const values = { 'enemy.shadow_beast.damage': 20, 'skill.shadow_strike.cooldown': 3000 };
   const writes = [];
   const queue = [...replies];
   const hermesAgent = new HermesBalanceAgent({
@@ -71,7 +71,7 @@ function harness({ replies, autoDeploy = true } = {}) {
 
 test('runs all six phases and deploys the validated patch', async () => {
   const { sop, hermesAgent, writes } = harness({ replies: [measureReply, proposeReply, dataSourceReply] });
-  const run = sop.start({ source: 'sdk test' });
+  const run = await sop.start({ source: 'sdk test' });
   assert.equal(run.status, 'running');
   await sop._runPromise;
 
@@ -91,9 +91,9 @@ test('runs all six phases and deploys the validated patch', async () => {
   assert.equal(propose.expectedKPIs[0].kpi, 'killDeathRatio');
 
   const deploy = run.phases.find(p => p.key === 'deploy').output;
-  assert.deepEqual(deploy.appliedChanges, [{ key: 'enemy.shadow_beast.damage', from: 10, to: 9, percentChange: -10 }]);
+  assert.deepEqual(deploy.appliedChanges, [{ key: 'enemy.shadow_beast.damage', from: 20, to: 18, percentChange: -10 }]);
   assert.deepEqual(deploy.deployedDataSources, ['potion_usage_timing']);
-  assert.deepEqual(writes, [{ key: 'enemy.shadow_beast.damage', value: 9, source: 'hermes' }]);
+  assert.deepEqual(writes, [{ key: 'enemy.shadow_beast.damage', value: 18, source: 'hermes' }]);
 
   // The SOP proposal is visible to the regular patch tab and marked applied.
   assert.equal(hermesAgent.proposals.at(-1).status, 'applied');
@@ -101,7 +101,7 @@ test('runs all six phases and deploys the validated patch', async () => {
 
 test('autoDeploy=false stops before applying anything', async () => {
   const { sop, writes } = harness({ replies: [measureReply, proposeReply, dataSourceReply] });
-  const run = sop.start({ source: 'sdk', autoDeploy: false });
+  const run = await sop.start({ source: 'sdk', autoDeploy: false });
   await sop._runPromise;
 
   assert.equal(run.status, 'completed');
@@ -112,7 +112,7 @@ test('autoDeploy=false stops before applying anything', async () => {
 test('a failed reasoning phase fails the run and preserves phase state', async () => {
   // Two non-JSON replies: the retry also fails, so the measure phase fails.
   const { sop } = harness({ replies: ['this is not json at all', 'still not json'] });
-  const run = sop.start({});
+  const run = await sop.start({});
   await sop._runPromise;
 
   assert.equal(run.status, 'failed');
@@ -124,23 +124,23 @@ test('a failed reasoning phase fails the run and preserves phase state', async (
 
 test('resolves free-form data source phrases and records the resolved id', async () => {
   const { sop } = harness({ replies: [measureReply, proposeReply, dataSourceReply] });
-  const run = sop.start({ source: 'data points from the live SDK stream' });
+  const run = await sop.start({ source: 'data points from the live SDK stream' });
   assert.equal(run.source, 'sdk');
   assert.equal(run.sourceLabel, 'data points from the live SDK stream');
   await sop._runPromise;
   assert.equal(run.status, 'completed');
 });
 
-test('unknown data sources are rejected with the available list', () => {
+test('unknown data sources are rejected with the available list', async () => {
   const { sop } = harness({ replies: [] });
-  assert.throws(() => sop.start({ source: 'mongo cluster prod-7' }), /Unknown data source .* Available sources: sdk .* matches .* all/);
+  await assert.rejects(sop.start({ source: 'mongo cluster prod-7' }), /Unknown data source .* Available sources: sdk .* matches .* all/);
 });
 
-test('match-history source fails clearly when the table is empty', () => {
+test('match-history source fails clearly when the table is empty', async () => {
   // Tests run without initDB, so getMatchHistory returns [] — the resolver
   // should still accept the phrase but ingest must fail with a clear message.
   const { sop } = harness({ replies: [] });
-  assert.throws(() => sop.start({ source: 'match history database' }), /'matches' is empty/);
+  await assert.rejects(sop.start({ source: 'match history database' }), /'matches' is empty/);
 });
 
 test('reports readiness of every data source', () => {
@@ -153,10 +153,31 @@ test('reports readiness of every data source', () => {
 
 test('rejects concurrent runs and runs without telemetry evidence', async () => {
   const { sop } = harness({ replies: [measureReply, proposeReply, dataSourceReply] });
-  sop.start({});
-  assert.throws(() => sop.start({}), /already in progress/);
+  await sop.start({});
+  await assert.rejects(sop.start({}), /already in progress/);
   await sop._runPromise;
 
   const empty = new TelemetrySOP({ telemetryAgent: { getEvidence: () => null }, hermesAgent: null });
-  assert.throws(() => empty.start({}), /no telemetry evidence/i);
+  await assert.rejects(empty.start({}), /no telemetry evidence/i);
+});
+
+test('sdk source rehydrates evidence through the hermes agent when memory is empty', async () => {
+  const { hermesAgent } = harness({ replies: [measureReply, proposeReply, dataSourceReply] });
+  // In-memory agent is empty; ensureEvidence must be consulted instead.
+  let hydrated = false;
+  const sop = new TelemetrySOP({
+    telemetryAgent: { getEvidence: () => null },
+    hermesAgent: {
+      ...hermesAgent,
+      execute: hermesAgent.execute,
+      _validateProposal: hermesAgent._validateProposal.bind(hermesAgent),
+      applyProposal: hermesAgent.applyProposal.bind(hermesAgent),
+      proposals: hermesAgent.proposals,
+      ensureEvidence: async () => { hydrated = true; return evidence; },
+    },
+  });
+  const run = await sop.start({ source: 'sdk', autoDeploy: false });
+  await sop._runPromise;
+  assert.equal(hydrated, true);
+  assert.equal(run.status, 'completed');
 });

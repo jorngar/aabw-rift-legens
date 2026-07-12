@@ -543,6 +543,7 @@ async function initGame(classId = 'warrior') {
     actorId: playerEntity.id,
     actorType: 'player',
     classId,
+    playerLevel: progressionSystem.level,
     area: 'seed_garden',
   }));
 
@@ -758,6 +759,9 @@ async function initGame(classId = 'warrior') {
     telemetry.observePlayerState(playerEntity, {
       area: riftSystem.inDungeon ? `rift_tier_${riftSystem.dungeonTier}` : 'seed_garden',
       classId,
+      playerLevel: progressionSystem.level,
+      tier: riftSystem.inDungeon ? riftSystem.dungeonTier : null,
+      wave: riftSystem.inDungeon ? riftSystem.currentWave : null,
     });
     telemetry.tick();
 

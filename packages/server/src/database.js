@@ -3,7 +3,9 @@
 // Telemetry agent reads/writes to adjust game balance live
 // ============================================================
 import initSqlJs from 'sql.js';
-import { ITEMS, WEAPONS } from '@rift-seed/shared/config';
+import {
+  CLASS_STATS, ITEMS, PLAYER_CLASSES, PLAYER_DEFAULTS, WEAPONS,
+} from '@rift-seed/shared/config';
 import { join, dirname } from 'path';
 import { fileURLToPath } from 'url';
 import { mkdirSync, readFileSync, writeFileSync, existsSync } from 'fs';
@@ -120,6 +122,7 @@ export async function initDB() {
 
   // Seed defaults
   seedDefaults();
+  enforceSafetyFloors();
   seedClasses();
   saveDB();
 
@@ -139,14 +142,14 @@ function seedDefaults() {
     ['player.mp_per_level', 8, 'player', 'MP per level'],
     ['player.damage_per_level', 4, 'player', 'Damage per level'],
     ['enemy.shadow_beast.hp', 200, 'enemy', 'Shadow Beast HP'],
-    ['enemy.shadow_beast.damage', 3, 'enemy', 'Shadow Beast damage'],
+    ['enemy.shadow_beast.damage', 16, 'enemy', 'Rift Slime damage'],
     ['enemy.shadow_beast.speed', 1.5, 'enemy', 'Shadow Beast speed'],
     ['enemy.shadow_beast.aggro_range', 4, 'enemy', 'Shadow Beast aggro'],
     ['enemy.shadow_beast.xp_reward', 25, 'enemy', 'Shadow Beast XP'],
     ['enemy.shadow_beast.gold_min', 10, 'enemy', 'Shadow Beast min gold'],
     ['enemy.shadow_beast.gold_max', 20, 'enemy', 'Shadow Beast max gold'],
     ['enemy.rift_knight.hp', 500, 'enemy', 'Rift Knight HP'],
-    ['enemy.rift_knight.damage', 8, 'enemy', 'Rift Knight damage'],
+    ['enemy.rift_knight.damage', 32, 'enemy', 'Rift Knight damage'],
     ['enemy.rift_knight.speed', 1.0, 'enemy', 'Rift Knight speed'],
     ['enemy.rift_knight.aggro_range', 5, 'enemy', 'Rift Knight aggro'],
     ['enemy.rift_knight.xp_reward', 100, 'enemy', 'Rift Knight XP'],
@@ -170,22 +173,66 @@ function seedDefaults() {
     ['ab.enemy_density_b', 8, 'ab_test', 'Variant B density'],
   ];
 
-  const stmt = db.prepare('INSERT OR IGNORE INTO game_balance (key, value, category, description) VALUES (?, ?, ?, ?)');
+  const stmt = db.prepare(`
+    INSERT INTO game_balance (key, value, category, description)
+    VALUES (?, ?, ?, ?)
+    ON CONFLICT(key) DO UPDATE SET
+      value = excluded.value,
+      category = excluded.category,
+      description = excluded.description
+    WHERE game_balance.updated_by = 'default'
+  `);
   for (const [key, value, category, desc] of defaults) {
     stmt.run([key, value, category, desc]);
   }
   stmt.free();
 }
 
-function seedClasses() {
-  const classes = [
-    ['warrior', 'Warrior', 'Melee fighter with high HP', 300, 60, 35, 2.8, 2.0, 'Thick Skin: -10% damage taken', 'shadow_strike,rift_slash,shield_bash,war_cry'],
-    ['mage', 'Mage', 'Ranged caster with high MP', 180, 150, 20, 2.5, 4.0, 'Arcane Overflow: +20% skill damage', 'fireball,ice_shard,mana_shield,meteor'],
-    ['rogue', 'Rogue', 'Fast attacker with crits', 220, 80, 28, 4.0, 1.8, 'Backstab: +50% crit from behind', 'shadow_strike,poison_dagger,dash,cloak'],
-    ['ranger', 'Ranger', 'Ranged with pet companion', 200, 100, 25, 3.2, 3.5, 'Eagle Eye: +20% range', 'arrow_shot,trap,summon_wolf,rapid_fire'],
-  ];
+function enforceSafetyFloors() {
+  const floors = {
+    'enemy.shadow_beast.damage': 16,
+    'enemy.rift_knight.damage': 32,
+  };
+  for (const [key, floor] of Object.entries(floors)) {
+    const current = getBalance(key, floor);
+    if (current < floor) {
+      setBalance(key, floor, `Raised stale value to combat safety floor ${floor}`, 'balance-migration');
+    }
+  }
+}
 
-  const stmt = db.prepare('INSERT OR IGNORE INTO player_classes (id, name, description, base_hp, base_mp, base_damage, base_speed, attack_range, passive, skills) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)');
+function seedClasses() {
+  const classes = Object.values(PLAYER_CLASSES).map(cls => {
+    const stats = CLASS_STATS[cls.id];
+    return [
+      cls.id,
+      cls.name,
+      cls.description,
+      Math.round(PLAYER_DEFAULTS.maxHp * stats.hpMult),
+      Math.round(PLAYER_DEFAULTS.maxMp * stats.mpMult),
+      Math.round(PLAYER_DEFAULTS.attackDamage * stats.damageMult),
+      Number((PLAYER_DEFAULTS.speed * stats.speedMult).toFixed(2)),
+      Number((PLAYER_DEFAULTS.attackRange * stats.rangeMult).toFixed(2)),
+      cls.passive,
+      cls.skills.join(','),
+    ];
+  });
+
+  const stmt = db.prepare(`
+    INSERT INTO player_classes
+      (id, name, description, base_hp, base_mp, base_damage, base_speed, attack_range, passive, skills)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    ON CONFLICT(id) DO UPDATE SET
+      name = excluded.name,
+      description = excluded.description,
+      base_hp = excluded.base_hp,
+      base_mp = excluded.base_mp,
+      base_damage = excluded.base_damage,
+      base_speed = excluded.base_speed,
+      attack_range = excluded.attack_range,
+      passive = excluded.passive,
+      skills = excluded.skills
+  `);
   for (const cls of classes) {
     stmt.run(cls);
   }

@@ -2,7 +2,7 @@
 // Server code that needs PATCHES imports from '@rift-seed/shared/patches-loader.js'.
 export { EventType, createEvent, TELEMETRY_SCHEMA_VERSION } from './events.js';
 export {
-  TILE, PLAYER_DEFAULTS, ENEMIES, SKILLS, MAP,
+  TILE, PLAYER_DEFAULTS, PLAYER_CLASSES, CLASS_STATS, ENEMIES, SKILLS, ITEMS, WEAPONS, MAP,
   AB_TESTS,
   SERVER, CLIENT,
 } from './config.js';

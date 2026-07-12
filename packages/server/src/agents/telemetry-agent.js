@@ -36,17 +36,19 @@ function createBaseline(patchId) {
     },
     path: { distance: 0, samples: 0 },
     sessionDurations: [],
+    sessionBounds: new Map(),
   };
 }
 
 /** Aggregates normalized SDK events into compact, explainable evidence. */
 export class TelemetryAgent {
-  constructor() {
+  constructor({ matchHistoryReader = getMatchHistory } = {}) {
     this.events = [];
     this.patchBaselines = new Map();
     this.reports = [];
     this.totalIngested = 0;
     this.sessionStart = new Date().toISOString();
+    this.matchHistoryReader = matchHistoryReader;
   }
 
   ingest(events) {
@@ -66,7 +68,18 @@ export class TelemetryAgent {
     if (!this.patchBaselines.has(patchId)) this.patchBaselines.set(patchId, createBaseline(patchId));
     const baseline = this.patchBaselines.get(patchId);
     baseline.events++;
-    if (event.sessionId) baseline.sessions.add(event.sessionId);
+    if (event.sessionId) {
+      baseline.sessions.add(event.sessionId);
+      const timestamp = Number(event.timestamp) || Date.now();
+      const bounds = baseline.sessionBounds.get(event.sessionId) || {
+        firstAt: timestamp,
+        lastAt: timestamp,
+        reportedDurationMs: null,
+      };
+      bounds.firstAt = Math.min(bounds.firstAt, timestamp);
+      bounds.lastAt = Math.max(bounds.lastAt, timestamp);
+      baseline.sessionBounds.set(event.sessionId, bounds);
+    }
 
     const actorType = event.actor?.type || event.actorType;
     const targetType = event.target?.type || event.targetType || event.victimType;
@@ -124,17 +137,32 @@ export class TelemetryAgent {
         baseline.path.distance += Number(event.metrics?.distance ?? event.distance) || 0;
         break;
       case EventType.SESSION_END:
-        baseline.sessionDurations.push(Number(event.durationMs ?? event.metrics?.durationMs) || 0);
+        {
+          const durationMs = Number(event.durationMs ?? event.metrics?.durationMs) || 0;
+          baseline.sessionDurations.push(durationMs);
+          const bounds = event.sessionId ? baseline.sessionBounds.get(event.sessionId) : null;
+          if (bounds && durationMs > 0) bounds.reportedDurationMs = durationMs;
+        }
         break;
     }
   }
 
   getEvidence(patchId = null) {
+    // When no patchId is requested, use the baseline with the MOST events,
+    // not the most recently created one. A single stray event carrying a
+    // different patchId (test injection, A/B patch name, version bump) used
+    // to create a fresh near-empty baseline that "won" the newest-first sort
+    // and starved Hermes of all real evidence — especially after Postgres
+    // rehydration, where replay order made the last patchId seen win.
     const baseline = patchId
       ? this.patchBaselines.get(patchId)
-      : [...this.patchBaselines.values()].sort((a, b) => b.startedAt - a.startedAt)[0];
+      : [...this.patchBaselines.values()].sort((a, b) => (b.events - a.events) || (b.startedAt - a.startedAt))[0];
     if (!baseline) return null;
-    const durationMinutes = Math.max((Date.now() - baseline.startedAt) / 60000, 1 / 60);
+    const observedDurationMs = [...baseline.sessionBounds.values()].reduce((total, bounds) => {
+      const measured = Math.max(0, bounds.lastAt - bounds.firstAt);
+      return total + Math.max(measured, bounds.reportedDurationMs || 0);
+    }, 0);
+    const durationMinutes = Math.max(observedDurationMs / 60000, 1 / 60);
     const totalDamage = baseline.damage.weapon + baseline.damage.skill;
     const skillUses = Object.values(baseline.skills.uses).reduce((sum, count) => sum + count, 0);
     return {
@@ -190,6 +218,55 @@ export class TelemetryAgent {
         completedSessions: baseline.sessionDurations.length,
         averageDurationMs: Math.round(average(baseline.sessionDurations)),
       },
+    };
+  }
+
+  /** Lower-resolution fallback for server restarts or pre-Postgres sessions. */
+  getHistoricalEvidence(patchId = null) {
+    const matches = this.matchHistoryReader(100) || [];
+    if (!matches.length) return null;
+    const sum = key => matches.reduce((total, row) => total + (Number(row[key]) || 0), 0);
+    const kills = sum('kills');
+    const playerDeaths = sum('deaths');
+    const observedMinutes = Math.max(sum('duration_seconds') / 60, 1 / 60);
+    const damageWeapon = sum('damage_dealt');
+    const damageReceived = sum('damage_taken');
+    const skillUses = sum('skills_used');
+    return {
+      patchId: patchId || 'match-history',
+      source: 'match_history',
+      sample: {
+        events: 0,
+        sessions: matches.length,
+        matches: matches.length,
+        observedMinutes: Number(observedMinutes.toFixed(2)),
+        sufficientForDirection: matches.length >= 3,
+        source: 'match_history',
+      },
+      outcomes: {
+        kills,
+        playerDeaths,
+        killsPerMinute: Number((kills / observedMinutes).toFixed(2)),
+        deathsPerMinute: Number((playerDeaths / observedMinutes).toFixed(2)),
+        killDeathRatio: playerDeaths > 0 ? Number((kills / playerDeaths).toFixed(2)) : kills,
+      },
+      damage: {
+        totalDealt: damageWeapon,
+        weapon: damageWeapon,
+        skill: 0,
+        received: damageReceived,
+        skillShare: 0,
+        byWeapon: {},
+        bySkill: {},
+        byEnemy: {},
+      },
+      skills: { uses: {}, hits: {}, totalUses: skillUses },
+      resources: {
+        hp: { gained: 0, lost: damageReceived, average: 0, minimum: null },
+        mp: { gained: 0, spent: 0, average: 0, minimum: null },
+      },
+      movement: { distanceTiles: 0, samples: 0 },
+      session: { averageDurationMs: Number((observedMinutes * 60_000 / matches.length).toFixed(0)) },
     };
   }
 

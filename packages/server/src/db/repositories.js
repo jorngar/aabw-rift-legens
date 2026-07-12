@@ -3,6 +3,7 @@
 // All writes go through here. Never string-interpolate user input.
 // ============================================================
 import { pool } from './pool.js';
+import { buildGameplayEventInsert } from '../gameplay-event.js';
 
 // ---------- Patches ----------
 
@@ -29,6 +30,64 @@ export async function findActivePatch() {
 export async function countPatches() {
   const { rows } = await pool.query(`SELECT COUNT(*)::int AS n FROM patches`);
   return rows[0].n;
+}
+
+// ---------- Game catalog + typed gameplay telemetry ----------
+
+export async function upsertGameCatalogBatch(rows) {
+  if (!rows?.length) return 0;
+  const params = [];
+  const values = rows.map(row => {
+    params.push(row.category, row.key, row.version, JSON.stringify(row.definition));
+    const offset = params.length - 3;
+    return `($${offset}, $${offset + 1}, $${offset + 2}, $${offset + 3}::jsonb)`;
+  });
+  await pool.query(
+    `INSERT INTO game_catalog (category, catalog_key, version, definition)
+     VALUES ${values.join(',')}
+     ON CONFLICT (category, catalog_key, version) DO UPDATE
+       SET definition = EXCLUDED.definition, updated_at = NOW()`,
+    params,
+  );
+  return rows.length;
+}
+
+export async function insertGameplayEventBatch(events, defaults = {}) {
+  const query = buildGameplayEventInsert(events, defaults);
+  if (!query) return 0;
+  const result = await pool.query(query.text, query.params);
+  return result.rowCount;
+}
+
+export async function getGameplayStorageCounts() {
+  const { rows } = await pool.query(`
+    SELECT
+      (SELECT COUNT(*)::int FROM gameplay_events) AS gameplay_events,
+      (SELECT COUNT(*)::int FROM game_catalog) AS catalog_entries,
+      (SELECT COUNT(DISTINCT session_id)::int FROM gameplay_events WHERE session_id IS NOT NULL) AS gameplay_sessions
+  `);
+  return rows[0];
+}
+
+export async function findRecentGameplayEvents({ patchId = null, limit = 2000 } = {}) {
+  const safeLimit = Math.min(5000, Math.max(1, Number(limit) || 2000));
+  const params = [];
+  let where = '';
+  if (patchId) {
+    params.push(String(patchId));
+    where = `WHERE patch_id = $${params.length}`;
+  }
+  params.push(safeLimit);
+  const { rows } = await pool.query(
+    `SELECT payload
+       FROM gameplay_events
+       ${where}
+      ORDER BY occurred_at DESC, id DESC
+      LIMIT $${params.length}`,
+    params,
+  );
+  // Re-ingest chronologically so duration and rolling evidence are coherent.
+  return rows.map(row => row.payload).reverse();
 }
 
 // ---------- Assignments ----------

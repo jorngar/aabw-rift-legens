@@ -110,3 +110,42 @@ test('normalizes balance and economy dimensions for Postgres telemetry', () => {
   assert.equal(normalized.metrics.goldBefore, 250);
   assert.equal(normalized.metrics.goldAfter, 50);
 });
+
+test('keeps weapon ids and rift layout dimensions in the normalized envelope', () => {
+  const sdk = new TelemetrySystem({ playerId: 'p-layout', sessionId: 's-layout' });
+  const weapon = sdk.record({
+    type: EventType.WEAPON_EQUIP,
+    playerId: 'entity',
+    actorId: 'entity',
+    actorType: 'player',
+    weaponId: 'seed_rifle',
+    weaponClass: 'heavy',
+  });
+  const rift = sdk.record({
+    type: EventType.RIFT_ENTER,
+    playerId: 'entity',
+    tier: 2,
+    layoutId: 'layout-3',
+    runNumber: 4,
+    area: 'rift_tier_2',
+  });
+
+  assert.equal(weapon.source.id, 'seed_rifle');
+  assert.equal(weapon.context.weaponClass, 'heavy');
+  assert.equal(rift.context.layoutId, 'layout-3');
+  assert.equal(rift.context.runNumber, 4);
+  assert.equal(rift.layoutId, 'layout-3');
+});
+
+test('does not emit per-frame telemetry for fractional mana regeneration', () => {
+  const sdk = new TelemetrySystem({ playerId: 'p-regen', sessionId: 's-regen' });
+  const player = {
+    id: 'player', classId: 'mage', level: 1, pos: { x: 1, y: 1 },
+    stats: { hp: 100, maxHp: 100, mp: 50, maxMp: 100 },
+  };
+  sdk.observePlayerState(player, { classId: 'mage', playerLevel: 1 });
+  const initial = sdk.buffer.length;
+  player.stats.mp += 0.016;
+  sdk.observePlayerState(player, { classId: 'mage', playerLevel: 1 });
+  assert.equal(sdk.buffer.length, initial);
+});

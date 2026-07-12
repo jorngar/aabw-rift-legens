@@ -7,6 +7,7 @@ const MAX_BUFFER_SIZE = 2000;
 const MAX_SERIES_SIZE = 240;
 const PATH_SAMPLE_INTERVAL_MS = 250;
 const STATE_SAMPLE_INTERVAL_MS = 1000;
+const MIN_OBSERVED_RESOURCE_DELTA = 1;
 
 function addToRecord(record, key, value) {
   record[key] = (record[key] || 0) + value;
@@ -164,6 +165,7 @@ export class GameTelemetrySDK {
 
   _normalize(event) {
     const timestamp = Number(event.timestamp) || Date.now();
+    const passthrough = event.payload && typeof event.payload === 'object' ? event.payload : {};
     const actorId = event.actorId ?? event.attackerId ?? event.playerId ?? null;
     const actorType = event.actorType || (actorId === this.playerEntityId ? 'player' : 'unknown');
     return {
@@ -184,7 +186,7 @@ export class GameTelemetrySDK {
       },
       source: {
         type: event.sourceType || (event.skillId ? 'skill' : 'system'),
-        id: event.sourceId || event.skillId || event.itemId || null,
+        id: event.sourceId || event.skillId || event.itemId || event.weaponId || null,
       },
       metrics: {
         damage: event.damage ?? null,
@@ -210,25 +212,34 @@ export class GameTelemetrySDK {
         weaponSkillPower: event.weaponSkillPower ?? null,
         weaponAffinity: event.weaponAffinity ?? null,
       },
-      position: event.position || (event.toX !== undefined ? { x: event.toX, y: event.toY } : null),
+      position: event.position
+        || (event.toX !== undefined ? { x: event.toX, y: event.toY } : null)
+        || (passthrough.x !== undefined ? { x: passthrough.x, y: passthrough.y } : null),
       context: {
         area: event.area || null,
-        classId: event.classId || null,
+        classId: event.classId || passthrough.classId || null,
         resource: event.resource || null,
         isCritical: Boolean(event.isCritical),
         testId: event.testId || null,
         variant: event.variant || null,
-        tier: event.tier ?? null,
+        tier: event.tier ?? passthrough.tier ?? null,
         result: event.result || null,
-        playerLevel: event.playerLevel ?? event.level ?? null,
+        playerLevel: event.playerLevel ?? event.level ?? passthrough.playerLevel ?? null,
         previousLevel: event.previousLevel ?? null,
         rank: event.rank || null,
-        wave: event.wave ?? null,
+        wave: event.wave ?? passthrough.wave ?? null,
         enemyLevel: event.enemyLevel ?? null,
         weaponClass: event.weaponClass || null,
         itemType: event.itemType || null,
         reason: event.reason || null,
+        mapZone: event.mapZone || event.area || passthrough.mapZone || null,
+        layoutId: event.layoutId || passthrough.layoutId || null,
+        runNumber: event.runNumber ?? null,
       },
+      // Kept at the root for the existing A/B JSONB layout query. New analysis
+      // should prefer context.layoutId.
+      layoutId: event.layoutId || null,
+      runNumber: event.runNumber ?? null,
       // Passthrough bucket so new event types (trajectory:sample,
       // path:stuck, item:purchase, combat:engaged, ...) can carry
       // arbitrary fields to server-side fanOut without teaching the
@@ -346,8 +357,8 @@ export class GameTelemetrySDK {
     };
 
     if (this._lastObservedState) {
-      this._trackResourceDelta('hp', this._lastObservedState.hp, current.hp, now);
-      this._trackResourceDelta('mp', this._lastObservedState.mp, current.mp, now);
+      this._trackResourceDelta('hp', this._lastObservedState.hp, current.hp, now, context);
+      this._trackResourceDelta('mp', this._lastObservedState.mp, current.mp, now, context);
     }
 
     if (!this._lastObservedState || now - this._lastPathSample >= PATH_SAMPLE_INTERVAL_MS) {
@@ -384,13 +395,16 @@ export class GameTelemetrySDK {
     this._lastObservedState = current;
   }
 
-  _trackResourceDelta(resource, before, after, timestamp) {
+  _trackResourceDelta(resource, before, after, timestamp, context = {}) {
     const delta = after - before;
-    if (Math.abs(delta) < 0.01) return;
+    // Smooth regeneration runs every frame. State samples already capture it;
+    // emitting each 0.016 MP tick would swamp meaningful combat/economy facts.
+    if (Math.abs(delta) < MIN_OBSERVED_RESOURCE_DELTA) return;
     this.record({
       type: EventType.RESOURCE_CHANGE, timestamp, playerId: this.playerEntityId,
       actorId: this.playerEntityId, actorType: 'player', sourceType: 'observation', sourceId: `${resource}_delta`,
       resource, delta, [`${resource}Before`]: before, [`${resource}After`]: after,
+      ...context,
     });
   }
 

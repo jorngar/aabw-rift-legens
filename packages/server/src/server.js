@@ -13,6 +13,7 @@ import { ABTestingAgent } from './agents/ab-testing-agent.js';
 import { DataCleaningAgent } from './agents/data-cleaning-agent.js';
 import { HermesBalanceAgent } from './agents/hermes-balance-agent.js';
 import { TelemetrySOP } from './agents/telemetry-sop.js';
+import { ABTestingSOP } from './agents/ab-testing-sop.js';
 import { getDataSources } from './database.js';
 import { getBalance, setBalance, getAllBalance, getMatchHistory, getAdjustments, getClasses, getClass, getAggregateStats, getDashboardData, saveDB, recordMatch, initDB } from './database.js';
 import { getRuntimeConfig } from './runtime-config.js';
@@ -23,6 +24,13 @@ import { SessionManager } from './session-manager.js';
 import { compressSession } from './path-compressor.js';
 import { fetchAllData, fetchSummary, fetchLayoutBreakdown } from './ab-data-viewer.js';
 import { fetchBreakdowns } from './ab-breakdowns.js';
+import { buildGameCatalog } from './game-catalog.js';
+import {
+  getGameplayStorageCounts,
+  findRecentGameplayEvents,
+  insertGameplayEventBatch,
+  upsertGameCatalogBatch,
+} from './db/repositories.js';
 
 const app = express();
 app.use(cors());
@@ -42,7 +50,10 @@ const wss = new WebSocketServer({ server: httpServer, path: '/ws' });
 const telemetryAgent = new TelemetryAgent();
 const abAgent = new ABTestingAgent();
 const dataAgent = new DataCleaningAgent();
-const hermesAgent = new HermesBalanceAgent({ telemetryAgent });
+const hermesAgent = new HermesBalanceAgent({
+  telemetryAgent,
+  evidenceLoader: patchId => findRecentGameplayEvents({ patchId, limit: 3000 }),
+});
 // A/B collection session lifecycle (Postgres). Path compression runs
 // asynchronously after a session ends — never blocks the WS handler.
 // SERVER_VARIANT env pins this pool to a single variant (LB mode).
@@ -63,6 +74,11 @@ const telemetrySOP = new TelemetrySOP({
   hermesAgent,
   onUpdate: run => broadcast('dashboard', { type: 'sop:update', run }),
 });
+const abSOP = new ABTestingSOP({
+  hermesAgent,
+  onUpdate: run => broadcast('dashboard', { type: 'absop:update', run }),
+});
+let postgresTelemetry = { status: 'starting', error: null };
 
 // ---- WebSocket Routing ----
 const clients = new Map(); // ws -> { type, id }
@@ -190,7 +206,14 @@ function broadcast(clientType, data) {
 
 // ---- REST API ----
 app.get('/api/health', (req, res) => {
-  res.json({ status: 'ok', agents: 4, clients: clients.size, hermes: hermesAgent.getSnapshot().status });
+  res.json({
+    status: 'ok',
+    agents: 4,
+    clients: clients.size,
+    hermes: hermesAgent.getSnapshot().status,
+    postgresTelemetry: postgresTelemetry.status,
+    postgresError: postgresTelemetry.error,
+  });
 });
 
 app.get('/api/telemetry', (req, res) => {
@@ -198,14 +221,36 @@ app.get('/api/telemetry', (req, res) => {
 });
 
 // REST fallback for engines that cannot keep a WebSocket connection open.
-app.post('/api/telemetry/events', (req, res) => {
+app.post('/api/telemetry/events', async (req, res) => {
   const events = Array.isArray(req.body?.events) ? req.body.events : [];
   if (events.length === 0) return res.status(400).json({ error: 'events must be a non-empty array' });
   if (events.length > 1000) return res.status(413).json({ error: 'batch exceeds the 1000 event limit' });
   telemetryAgent.ingest(events);
   const snapshot = telemetryAgent.getSnapshot();
   broadcast('dashboard', { type: 'telemetry:update', snapshot });
-  res.status(202).json({ accepted: events.length, totalEvents: snapshot.totalEvents });
+  let persisted = 0;
+  if (postgresTelemetry.status === 'enabled') {
+    try {
+      persisted = await insertGameplayEventBatch(events);
+    } catch (error) {
+      postgresTelemetry = { status: 'degraded', error: error.message };
+      console.error('[Postgres] REST gameplay persistence failed:', error.message);
+    }
+  }
+  res.status(202).json({ accepted: events.length, persisted, totalEvents: snapshot.totalEvents });
+});
+
+app.get('/api/telemetry/storage', async (_req, res) => {
+  if (postgresTelemetry.status !== 'enabled') {
+    return res.status(503).json({ ...postgresTelemetry, gameplayEvents: 0, catalogEntries: 0 });
+  }
+  try {
+    const counts = await getGameplayStorageCounts();
+    res.json({ status: 'enabled', ...counts });
+  } catch (error) {
+    postgresTelemetry = { status: 'degraded', error: error.message };
+    res.status(503).json(postgresTelemetry);
+  }
 });
 
 app.get('/api/ab-tests', async (req, res) => {
@@ -284,17 +329,17 @@ app.get('/api/agents/status', async (req, res) => {
 // POST starts the six-phase workflow (ingest → measure → recommend →
 // propose → datasources → deploy); progress is polled via GET or pushed
 // to dashboard clients as sop:update WebSocket messages.
-app.post('/api/agents/telemetry/sop/run', (req, res) => {
+app.post('/api/agents/telemetry/sop/run', async (req, res) => {
   try {
-    const run = telemetrySOP.start({
+    const run = await telemetrySOP.start({
       source: String(req.body?.source || 'sdk'),
       patchId: req.body?.patchId || null,
       autoDeploy: req.body?.autoDeploy !== false,
     });
     res.status(202).json({ runId: run.id, status: run.status, source: run.source, phases: run.phases.map(p => p.key) });
   } catch (error) {
-    // start() only throws validation errors synchronously (unknown/empty
-    // data source, no evidence) besides the concurrent-run guard.
+    // start() only throws validation errors (unknown/empty data source,
+    // no evidence) besides the concurrent-run guard.
     const status = error.message.includes('already in progress') ? 409 : 400;
     res.status(status).json({ error: error.message, availableSources: telemetrySOP.getAvailableSources() });
   }
@@ -302,6 +347,32 @@ app.post('/api/agents/telemetry/sop/run', (req, res) => {
 
 app.get('/api/agents/telemetry/sop', (req, res) => {
   res.json(telemetrySOP.getSnapshot());
+});
+
+// ---- A/B testing SOP API (same pattern as the telemetry SOP) ----
+// POST starts the five-phase workflow (ingest → measure → recommend →
+// verdict → deploy); autoDeploy defaults to FALSE because deploy shifts
+// live LB traffic. GET polls progress; absop:update is pushed over WS.
+app.post('/api/agents/ab/sop/run', async (req, res) => {
+  try {
+    const run = await abSOP.start({ autoDeploy: req.body?.autoDeploy === true });
+    res.status(202).json({ runId: run.id, status: run.status, patchId: run.patchId, phases: run.phases.map(p => p.key) });
+  } catch (error) {
+    const status = error.message.includes('already in progress') ? 409 : 400;
+    res.status(status).json({ error: error.message });
+  }
+});
+
+app.get('/api/agents/ab/sop', (req, res) => {
+  res.json(abSOP.getSnapshot());
+});
+
+app.get('/api/agents/ab/sop/verdict', async (req, res) => {
+  try {
+    res.json(await abSOP.computeVerdict());
+  } catch (error) {
+    res.status(400).json({ error: error.message });
+  }
 });
 
 app.get('/api/data-sources', (req, res) => {
@@ -407,14 +478,16 @@ async function start() {
   // Non-fatal on error so the rest of the server still boots.
   try {
     await verifyPostgresConnection();
-    // Auto-apply schema in prod or when explicitly requested (Railway sets
-    // NODE_ENV=production). Local dev uses `pnpm --filter server migrate`.
-    if (process.env.NODE_ENV === 'production' || process.env.APPLY_SCHEMA_ON_BOOT === '1') {
-      await applySchema();
-    }
+    // Idempotent and cheap enough to run on every boot. This prevents a healthy
+    // database with an old schema from silently disabling newer telemetry.
+    await applySchema();
     await seedPatches();
+    const catalogEntries = await upsertGameCatalogBatch(buildGameCatalog());
+    postgresTelemetry = { status: 'enabled', error: null };
+    console.log(`[Postgres] gameplay telemetry enabled; catalog entries=${catalogEntries}`);
   } catch (err) {
-    console.warn(`[DB] Postgres unreachable — A/B collection disabled: ${err.message}`);
+    postgresTelemetry = { status: 'disabled', error: err.message };
+    console.warn(`[DB] Postgres unavailable — durable telemetry disabled: ${err.message}`);
   }
   const PORT = Number(process.env.PORT) || SERVER.PORT;
   httpServer.listen(PORT, () => {
@@ -424,7 +497,7 @@ async function start() {
       console.log(`[RiftSEED Server] POOL MODE — hardcoded to variant ${HARDCODED_VARIANT}`);
     }
     console.log(`[RiftSEED Server] Agents: Telemetry SDK, Hermes Balance, A/B Testing, Data Cleaning`);
-    console.log(`[RiftSEED Server] Database: SQLite (game.db) + Postgres (A/B collection)`);
+    console.log(`[RiftSEED Server] Database: SQLite balance + Postgres telemetry (${postgresTelemetry.status})`);
     console.log(`[RiftSEED Server] Classes: ${getClasses().map(c => c.name).join(', ')}`);
   });
 }

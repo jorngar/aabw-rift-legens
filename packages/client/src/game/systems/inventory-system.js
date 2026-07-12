@@ -61,6 +61,7 @@ export class InventorySystem {
     if (item.buffDamage) {
       applyEffect(this.player.id, {
         type: 'damage_buff',
+        sourceId: `item:${itemId}`,
         amount: item.buffDamage,
         expires: Date.now() + (item.buffDuration || 10000),
       });
@@ -76,6 +77,7 @@ export class InventorySystem {
         actorId: this.player.id, actorType: 'player', sourceType: 'item', sourceId: itemId,
         resource: 'hp', delta: this.player.stats.hp - hpBefore,
         hpBefore, hpAfter: this.player.stats.hp,
+        classId: this.player.classId, playerLevel: this.player.level,
       }));
     }
     if (this.player.stats.mp !== mpBefore) {
@@ -83,6 +85,7 @@ export class InventorySystem {
         actorId: this.player.id, actorType: 'player', sourceType: 'item', sourceId: itemId,
         resource: 'mp', delta: this.player.stats.mp - mpBefore,
         mpBefore, mpAfter: this.player.stats.mp,
+        classId: this.player.classId, playerLevel: this.player.level,
       }));
     }
     return true;
@@ -91,9 +94,20 @@ export class InventorySystem {
   equipWeapon(weaponId) {
     const w = WEAPONS[weaponId];
     if (!w || !this.hasItem(weaponId) || this.equipped.mainHand === weaponId) return false;
-    // Remove the replacement first so swapping works even with a full inventory.
+    const previousWeaponId = this.equipped.mainHand;
+    const incomingSlot = this.slots.find(slot => slot.itemId === weaponId);
+    const previousHasSlot = previousWeaponId && this.hasItem(previousWeaponId);
+    const freesSlot = incomingSlot?.quantity === 1;
+    if (previousWeaponId && !previousHasSlot && !freesSlot && this.slots.length >= this.maxSlots) {
+      return false;
+    }
+
+    // The capacity check above makes the swap atomic even when every slot is in use.
     if (!this.removeItem(weaponId)) return false;
-    if (this.equipped.mainHand) this._unequipWeapon(this.equipped.mainHand);
+    if (previousWeaponId && !this._unequipWeapon(previousWeaponId)) {
+      this.addItem(weaponId, 1, { emit: false });
+      return false;
+    }
     this.equipped.mainHand = weaponId;
     this.player.equippedWeaponId = weaponId;
     if (w.maxMp) { this.player.stats.maxMp += w.maxMp; this.player.stats.mp += w.maxMp; }
@@ -113,18 +127,19 @@ export class InventorySystem {
 
   _unequipWeapon(weaponId) {
     const w = WEAPONS[weaponId];
-    if (!w) return;
+    if (!w || !this.addItem(weaponId, 1, { emit: false })) return false;
     if (w.maxMp) {
       this.player.stats.maxMp -= w.maxMp;
       this.player.stats.mp = Math.min(this.player.stats.mp, this.player.stats.maxMp);
     }
     this.player.equippedWeaponId = null;
-    this.addItem(weaponId, 1, { emit: false });
+    return true;
   }
 
   purchaseItem(itemId) {
     const item = ITEMS[itemId] || WEAPONS[itemId];
     if (!item || item.sellOnly || this.gold < item.price) return false;
+    if (WEAPONS[itemId] && (this.hasItem(itemId) || this.equipped.mainHand === itemId)) return false;
     const goldBefore = this.gold;
     if (!this.addItem(itemId, 1, { emit: false })) return false;
     this.gold -= item.price;

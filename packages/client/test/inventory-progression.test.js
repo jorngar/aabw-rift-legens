@@ -64,3 +64,30 @@ test('multi-level XP applies survivability once and leaves damage derived', () =
   assert.ok(events.some(event => event.type === EventType.XP_GAIN));
   assert.ok(events.some(event => event.type === EventType.LEVEL_UP));
 });
+
+test('weapon swaps are rejected without losing items when a full inventory cannot hold the old weapon', () => {
+  const actor = player();
+  const inventory = new InventorySystem(actor, () => {});
+  inventory.maxSlots = 2;
+  inventory.slots = [
+    { itemId: 'gunblade', quantity: 2 },
+    { itemId: 'health_potion', quantity: 1 },
+  ];
+  inventory.equipped.mainHand = 'pistol';
+  actor.equippedWeaponId = 'pistol';
+
+  assert.equal(inventory.equipWeapon('gunblade'), false);
+  assert.equal(inventory.equipped.mainHand, 'pistol');
+  assert.equal(actor.equippedWeaponId, 'pistol');
+  assert.equal(inventory.getCount('gunblade'), 2);
+});
+
+test('weapons are unique purchases across inventory and equipment', () => {
+  const actor = player();
+  const inventory = new InventorySystem(actor, () => {});
+  inventory.gold = 1000;
+  assert.equal(inventory.purchaseItem('pistol'), true);
+  assert.equal(inventory.purchaseItem('pistol'), false);
+  assert.equal(inventory.equipWeapon('pistol'), true);
+  assert.equal(inventory.purchaseItem('pistol'), false);
+});

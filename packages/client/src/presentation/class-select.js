@@ -1,39 +1,21 @@
 // ============================================================
 // Class Selection Screen — choose before game starts
 // ============================================================
-import { SKILLS } from '@rift-seed/shared/config';
+import { CLASS_STATS, PLAYER_CLASSES, PLAYER_DEFAULTS, SKILLS } from '@rift-seed/shared/config';
 
-const CLASSES = [
-  // Stats reflect CLASS_STATS multipliers applied to PLAYER_DEFAULTS
-  {
-    id: 'warrior', name: 'WARRIOR', color: '#ff6b35',
-    desc: 'Melee fighter with high HP and defense',
-    stats: 'HP: 650 | MP: 60 | DMG: 35 | SPD: 2.8',
-    passive: 'Thick Skin: -10% damage taken',
-    skills: ['shadowStrike', 'riftSlash', 'shieldBash', 'warCry'],
-  },
-  {
-    id: 'mage', name: 'MAGE', color: '#4a9eff',
-    desc: 'Ranged caster with high MP and skill damage',
-    stats: 'HP: 350 | MP: 150 | DMG: 21 | SPD: 2.6',
-    passive: 'Arcane Overflow: +20% skill damage',
-    skills: ['fireball', 'iceShard', 'heal', 'riftTeleport'],
-  },
-  {
-    id: 'rogue', name: 'ROGUE', color: '#44ff44',
-    desc: 'Fast attacker with critical hits',
-    stats: 'HP: 400 | MP: 80 | DMG: 29 | SPD: 4.0',
-    passive: 'Backstab: 25% crit chance',
-    skills: ['poisonDagger', 'shadowStrike', 'dash', 'heal'],
-  },
-  {
-    id: 'ranger', name: 'RANGER', color: '#f59e0b',
-    desc: 'Ranged attacker with superior reach',
-    stats: 'HP: 375 | MP: 100 | DMG: 26 | SPD: 3.2',
-    passive: 'Eagle Eye: +20% attack range',
-    skills: ['arrowShot', 'riftSlash', 'summonWolf', 'heal'],
-  },
-];
+const CLASSES = Object.values(PLAYER_CLASSES).map(cls => {
+  const stats = CLASS_STATS[cls.id];
+  return {
+    ...cls,
+    desc: cls.description,
+    stats: [
+      `HP: ${Math.round(PLAYER_DEFAULTS.maxHp * stats.hpMult)}`,
+      `MP: ${Math.round(PLAYER_DEFAULTS.maxMp * stats.mpMult)}`,
+      `DMG: ${Math.round(PLAYER_DEFAULTS.attackDamage * stats.damageMult)}`,
+      `SPD: ${(PLAYER_DEFAULTS.speed * stats.speedMult).toFixed(1)}`,
+    ].join(' | '),
+  };
+});
 
 /**
  * Show class selection screen.

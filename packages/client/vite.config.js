@@ -25,12 +25,15 @@ export default defineConfig({
   server: {
     port: 5173,
     proxy: {
-      // Route everything through the LB (port 3000). The LB weight-random
-      // routes WS upgrades to pool A (:3001) or pool B (:3002) and round-
-      // robins HTTP calls between them.
-      '/api': 'http://localhost:3000',
+      // Route everything through the LB (port 3000) by default. The LB
+      // weight-random routes WS upgrades to pool A (:3001) or pool B (:3002)
+      // and round-robins HTTP calls between them. `pnpm dev:single` sets
+      // API_PROXY=http://localhost:3001 to talk to one server directly —
+      // without the override, running client + single server (the old
+      // dev:all) leaves :3000 unbound and every request ECONNREFUSEs.
+      '/api': process.env.API_PROXY || 'http://localhost:3000',
       '/ws': {
-        target: 'ws://localhost:3000',
+        target: (process.env.API_PROXY || 'http://localhost:3000').replace(/^http/, 'ws'),
         ws: true,
       },
     },

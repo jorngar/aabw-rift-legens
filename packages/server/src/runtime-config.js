@@ -27,13 +27,13 @@ export function getRuntimeConfig() {
     enemies: {
       shadowBeast: {
         hp: getBalance('enemy.shadow_beast.hp', 200),
-        damage: getBalance('enemy.shadow_beast.damage', 3),
+        damage: getBalance('enemy.shadow_beast.damage', 16),
         speed: getBalance('enemy.shadow_beast.speed', 1.5),
         aggroRange: getBalance('enemy.shadow_beast.aggro_range', 4),
       },
       riftKnight: {
         hp: getBalance('enemy.rift_knight.hp', 500),
-        damage: getBalance('enemy.rift_knight.damage', 8),
+        damage: getBalance('enemy.rift_knight.damage', 32),
         speed: getBalance('enemy.rift_knight.speed', 1),
         aggroRange: getBalance('enemy.rift_knight.aggro_range', 5),
       },

@@ -131,3 +131,35 @@ Original prompt: okay now we need to focus on fixing the game for the demo, we h
 - The Archer/Orc source did not include a license file. Runtime license notes explicitly flag that its redistribution terms must be verified before publishing outside the hackathon.
 - The required post-integration browser launch was rejected because the environment hit its approval/usage limit. Do not bypass it; rerun the Ranger/Orc browser scenario when browser approval is available.
 - Final safe verification after Ranger/Orc integration: 14 client tests + 9 server tests pass, production build succeeds, all promoted runtime strips are present/non-empty, retired chibi/heavy assets are absent from `dist`, and `git diff --check` passes.
+
+## Session 2026-07-12 — Combat hardening and durable gameplay telemetry
+
+- Made skill spending transactional: missing, dead, full-health, out-of-range, and missing-world casts no longer consume mana or start cooldowns.
+- Timed damage buffs now stack across distinct sources and refresh by source. Ranger's no-op Summon Wolf was replaced in place by Spirit Wolf, a real +25% damage buff for 10 seconds.
+- Weapon swaps are atomic at inventory capacity, duplicate weapon purchases are rejected, and equipped max-MP changes remain reversible.
+- Centralized class identity, loadouts, passives, colors, and stat definitions in the shared package. The class picker, SQLite class table, and Postgres catalog now use the same source instead of stale copies with nonexistent skill IDs.
+- Raised combat-safe enemy damage floors to 16 for Rift Slimes and 32 for Rift Knights. Wave, player-level, and tier scaling still applies above those floors; stale persisted values are migrated once and Hermes cannot propose below the same limits.
+- Added versioned Postgres `game_catalog` and typed `gameplay_events` tables. Catalog seeding currently writes 30 class/weapon/skill/enemy/item definitions.
+- Normalized WebSocket and REST telemetry now persists idempotently by `event_id`, including class/level, enemy level, wave/tier, weapon/item, economy, resource, position, and layout dimensions. `/api/telemetry/storage` reports durable counts.
+- Repaired the old A/B fan-out adapter so normalized purchases, deaths, positions, map zones, and layout IDs populate their denormalized tables correctly.
+- Removed per-frame MP regeneration telemetry spam; one-second state samples retain the curve while explicit skill/item resource changes remain durable and attributed.
+- Live Docker/Postgres verification passed: all 18 schema statements migrated, 30 catalog entries seeded, REST replay inserted once, and browser gameplay rows contained Ranger class/level, enemy level, 16-point incoming hits, and attributed Spirit Wolf spend.
+- Final automated verification: 35 client tests + 20 server tests pass, production build passes, and `git diff --check` passes.
+- Final browser artifacts: `packages/client/output/final-balance-postgres-pass/shot-0.png` and `packages/client/output/balance-telemetry-attribution/spirit-wolf.png`; both were visually inspected and had no console errors.
+
+## Remaining follow-up after 2026-07-12
+
+- The production bundle still warns that the main chunk is about 621 kB; split Pixi/game orchestration before treating bundle size as a release gate.
+- Add retention/partitioning policy for `gameplay_events` before sustained production traffic; the current indexes are suitable for the demo but the table is append-only.
+
+## Session 2026-07-12 — Hermes restart recovery and one-command database startup
+
+- Reproduced Generate Patch returning HTTP 400 after backend restart because `TelemetryAgent` held evidence only in memory, even though Postgres and SQLite contained completed sessions.
+- Added `pnpm start`, `db:start`, `db:status`, and `db:stop`. `dev:server`, `dev:all`, and `dev:lb-all` now start Docker Postgres and wait for its health check before launching backend processes.
+- Backend startup remains responsible for idempotent schema migration, A/B patch seeding, and the 30-entry game catalog seed.
+- Hermes now hydrates up to 3,000 recent normalized events from Postgres when memory is empty. If Postgres hydration fails or has no rows, it falls back to aggregate SQLite match history rather than failing immediately.
+- Hermes status now exposes `evidenceSource` (`memory`, `postgres`, or `match_history`) and `hydrationError` for diagnosis.
+- Reconstructed observation time from per-session event bounds and reported session durations. This fixed a restart artifact that initially reported 240 kills/min; the verified durable evidence reports 2,495 events, 8 sessions, 6.31 observed minutes, and 0.63 kills/min.
+- Live endpoint verification passed twice. `POST /api/agents/hermes/analyze` generated validated proposals through the installed Hermes CLI, with the final proposal sourced from Postgres and no hydration error.
+- Cold-start verification passed: after `pnpm db:stop`, `PORT=3011 pnpm dev:server` started Postgres, waited until healthy, migrated/seeding successfully, and then bound the backend.
+- Regression coverage now includes Postgres hydration, match-history fallback, and persisted session-duration reconstruction.
