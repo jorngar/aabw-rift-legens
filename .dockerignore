@@ -1,0 +1,42 @@
+# Excludes from Docker build context — keeps hermes-agent image small
+# and avoids leaking local dev artifacts / secrets into the container.
+
+# Node deps — will be reinstalled inside the image from pnpm-lock.yaml
+**/node_modules
+**/.pnpm-store
+
+# Build outputs — hermes-agent only needs source
+**/dist
+**/build
+**/.next
+**/.vite
+**/.cache
+
+# Git + editors
+.git
+.gitignore
+.github
+.vscode
+.idea
+.DS_Store
+
+# Local / dev-only tooling — not needed in the container
+.claude
+.env
+.env.*
+!.env.example
+
+# Test artifacts
+**/coverage
+**/*.log
+**/.nyc_output
+
+# Plans / docs / reports — informational only
+plans
+docs
+*.md
+!README.md
+
+# Misc
+tmp
+temp

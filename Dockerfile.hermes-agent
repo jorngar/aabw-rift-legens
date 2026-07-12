@@ -1,0 +1,60 @@
+# =============================================================================
+# Hermes Agent + Rift SEED SOP CLI
+# =============================================================================
+# Extends the Nous Research Hermes Agent image with our monorepo so that
+# `packages/server/src/agents/sop-cli.js` can run inside the same container
+# where the `hermes` CLI is installed. Layout:
+#
+#   /opt/hermes         → Hermes install (from base image, unchanged)
+#   /opt/data           → Hermes config + secrets (from base image)
+#   /opt/rift-seed      → this repo, with node_modules pre-installed
+#
+# Deploy on Railway:
+#   1. Push this file to your repo
+#   2. hermes-agent service → Settings → Source → point at this branch
+#   3. Set the Dockerfile Path to `Dockerfile.hermes-agent`
+#   4. Redeploy. Container still runs hermes gateway via s6 by default;
+#      shell in to run `node /opt/rift-seed/packages/server/src/agents/sop-cli.js ab`.
+#
+# Env vars this container reads (set them in Railway):
+#   KILOCODE_API_KEY       — KiloCode auth (Hermes provider)
+#   KILOCODE_LLM_MODEL     — model string, e.g. `kilo-auto/free`
+#   DATABASE_URL           — Postgres so sop-cli can read game events
+#   AB_TESTING_BASE        — LB base URL (private DNS) for --promote weight shifts
+#   HERMES_TIMEOUT_MS      — optional; default 240000
+# =============================================================================
+
+FROM nousresearch/hermes-agent:latest
+
+# ---- Install Node 20 + pnpm --------------------------------------------------
+# The base image is Debian-family (uses apt + s6 supervision). Install Node
+# from the NodeSource repo so we match a recent runtime our lockfile expects.
+USER root
+RUN set -eux; \
+    apt-get update; \
+    apt-get install -y --no-install-recommends ca-certificates curl gnupg; \
+    curl -fsSL https://deb.nodesource.com/setup_20.x | bash -; \
+    apt-get install -y --no-install-recommends nodejs; \
+    npm install -g pnpm@9; \
+    apt-get clean; \
+    rm -rf /var/lib/apt/lists/*
+
+# ---- Bring the repo in + install workspace deps -----------------------------
+# Copy is done in two steps for better Docker layer caching:
+#   1. lockfile + workspace manifests → install skeleton
+#   2. rest of the repo → source
+WORKDIR /opt/rift-seed
+COPY pnpm-workspace.yaml package.json pnpm-lock.yaml ./
+COPY packages/shared/package.json  packages/shared/package.json
+COPY packages/server/package.json  packages/server/package.json
+COPY packages/client/package.json  packages/client/package.json
+RUN pnpm install --frozen-lockfile --prod || pnpm install --prod
+
+# Now copy the actual source files (invalidates cache only when code changes).
+COPY . .
+
+# ---- Hand back to the base image's default runtime --------------------------
+# The base image starts `hermes gateway` under s6 supervision. We do NOT
+# override CMD/ENTRYPOINT — Nous's init handles process lifecycle. To run
+# a SOP, shell in and:
+#   node /opt/rift-seed/packages/server/src/agents/sop-cli.js ab --verdict-only
